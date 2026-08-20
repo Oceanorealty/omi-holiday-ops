@@ -1,7 +1,9 @@
 """
-Thin SMTP sender. If SMTP env vars aren't configured, send_email() returns
-False without raising, so the trigger pipeline can run (and be tested)
-before real mail credentials exist — it just logs everything as skipped.
+Thin SMTP sender, supporting both port 465 (implicit SSL) and 587
+(STARTTLS) — SiteGround-hosted mailboxes commonly use 465. Callers should
+check smtp_configured() first; if it's False, send_email() isn't called at
+all, so the trigger pipeline can run (and be tested) before real mail
+credentials exist.
 """
 
 import os
@@ -29,7 +31,14 @@ def send_email(to: str, subject: str, body: str) -> None:
     msg.set_content(body)
 
     context = ssl.create_default_context()
-    with smtplib.SMTP(host, port) as server:
-        server.starttls(context=context)
-        server.login(user, password)
-        server.send_message(msg)
+    if port == 465:
+        # Implicit SSL (SMTPS) — the connection is encrypted from the start.
+        with smtplib.SMTP_SSL(host, port, context=context) as server:
+            server.login(user, password)
+            server.send_message(msg)
+    else:
+        # 587 (or anything else) — plaintext connect, then upgrade via STARTTLS.
+        with smtplib.SMTP(host, port) as server:
+            server.starttls(context=context)
+            server.login(user, password)
+            server.send_message(msg)
