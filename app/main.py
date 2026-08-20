@@ -1,13 +1,15 @@
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.comms.templates import seed_default_templates
 from app.comms.triggers import process_due_messages
+from app import migrate
 from app.db import Base, SessionLocal, engine
 from app.models import (
     Booking,
@@ -20,10 +22,15 @@ from app.models import (
     MessageTemplate,
     PlatformName,
     Property,
+    Transaction,
 )
+from app.reconcile.importer import ImportError_, parse_csv
+from app.reconcile.matching import suggest_bookings
+from app.reconcile.summary import monthly_summary
 from app.sync.cleaning import sync_cleaning_tasks
 from app.sync.ical_sync import recompute_conflicts, sync_all, sync_feed
 
+migrate.run(engine)
 Base.metadata.create_all(bind=engine)
 
 with SessionLocal() as _db:
@@ -105,6 +112,22 @@ def trigger_sync():
         sync_all(db)
         sync_cleaning_tasks(db)
         process_due_messages(db)
+    finally:
+        db.close()
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.post("/bookings/{booking_id}/amount")
+def update_booking_amount(booking_id: int, amount: str = Form("")):
+    db = SessionLocal()
+    try:
+        booking = db.get(Booking, booking_id)
+        if booking:
+            try:
+                booking.amount = Decimal(amount) if amount.strip() else None
+            except InvalidOperation:
+                pass  # leave unchanged on bad input rather than 500
+            db.commit()
     finally:
         db.close()
     return RedirectResponse(url="/", status_code=303)
@@ -281,3 +304,101 @@ def reopen_cleaning_task(task_id: int):
     finally:
         db.close()
     return RedirectResponse(url="/cleaning", status_code=303)
+
+
+@app.get("/transactions")
+def transactions_page(request: Request, error: str = ""):
+    db = SessionLocal()
+    try:
+        unmatched = (
+            db.query(Transaction)
+            .filter(Transaction.matched.is_(False))
+            .order_by(Transaction.occurred_at.desc())
+            .all()
+        )
+        matched = (
+            db.query(Transaction)
+            .filter(Transaction.matched.is_(True))
+            .order_by(Transaction.occurred_at.desc())
+            .limit(30)
+            .all()
+        )
+        suggestions = {t.id: suggest_bookings(db, t) for t in unmatched}
+        properties = db.query(Property).order_by(Property.name).all()
+        summary = monthly_summary(db)
+
+        return templates.TemplateResponse(
+            "transactions.html",
+            {
+                "request": request,
+                "unmatched": unmatched,
+                "matched": matched,
+                "suggestions": suggestions,
+                "properties": properties,
+                "summary": summary,
+                "error": error,
+            },
+        )
+    finally:
+        db.close()
+
+
+@app.post("/transactions/upload")
+def upload_transactions(
+    file: UploadFile,
+    source: str = Form(...),
+    property_id: str = Form(""),
+):
+    db = SessionLocal()
+    try:
+        content = file.file.read().decode("utf-8-sig")
+        try:
+            rows = parse_csv(content)
+        except ImportError_ as exc:
+            return RedirectResponse(url=f"/transactions?error={exc}", status_code=303)
+
+        prop_id = int(property_id) if property_id else None
+        for row in rows:
+            db.add(
+                Transaction(
+                    property_id=prop_id,
+                    source=source,
+                    amount=row["amount"],
+                    occurred_at=row["occurred_at"],
+                    raw_note=row["note"],
+                )
+            )
+        db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/transactions", status_code=303)
+
+
+@app.post("/transactions/{transaction_id}/match")
+def match_transaction(transaction_id: int, booking_id: int = Form(...)):
+    db = SessionLocal()
+    try:
+        transaction = db.get(Transaction, transaction_id)
+        booking = db.get(Booking, booking_id)
+        if transaction and booking:
+            transaction.booking_id = booking.id
+            transaction.property_id = booking.property_id
+            transaction.matched = True
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/transactions", status_code=303)
+
+
+@app.post("/transactions/{transaction_id}/unmatch")
+def unmatch_transaction(transaction_id: int):
+    db = SessionLocal()
+    try:
+        transaction = db.get(Transaction, transaction_id)
+        if transaction:
+            transaction.booking_id = None
+            transaction.matched = False
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/transactions", status_code=303)

@@ -34,6 +34,7 @@
       <th>Guest / Summary</th>
       <th>Check-in</th>
       <th>Check-out</th>
+      <th>Amount</th>
       <th>Guest email</th>
       <th>Messages</th>
       <th></th>
@@ -47,6 +48,12 @@
       <td>{{ b.summary or '—' }}</td>
       <td>{{ b.check_in.strftime('%Y-%m-%d') }}</td>
       <td>{{ b.check_out.strftime('%Y-%m-%d') }}</td>
+      <td>
+        <form method="post" action="/bookings/{{ b.id }}/amount" class="inline-form">
+          <input type="text" name="amount" placeholder="$" value="{{ b.amount if b.amount is not none else '' }}" style="width:64px" />
+          <button class="btn tiny" type="submit">save</button>
+        </form>
+      </td>
       <td>
         <form method="post" action="/bookings/{{ b.id }}/guest" class="inline-form">
           <input type="email" name="email" placeholder="guest email" value="{{ b.guest.email if b.guest else '' }}" />

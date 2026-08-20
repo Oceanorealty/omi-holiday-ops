@@ -8,6 +8,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -106,6 +107,10 @@ class Booking(Base):
     check_out = Column(DateTime, nullable=False)
     status = Column(Enum(BookingStatus), default=BookingStatus.confirmed)
 
+    # iCal feeds don't carry price info, so this is filled in by hand — it's
+    # what reconciliation compares incoming transactions against.
+    amount = Column(Numeric(10, 2), nullable=True)
+
     has_conflict = Column(Boolean, default=False)
 
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -116,6 +121,7 @@ class Booking(Base):
     cleaning_task = relationship(
         "CleaningTask", back_populates="booking", uselist=False, cascade="all, delete-orphan"
     )
+    transactions = relationship("Transaction", back_populates="booking")
 
 
 class CleaningTask(Base):
@@ -163,15 +169,20 @@ class MessageLog(Base):
 
 
 class Transaction(Base):
-    """Stubbed for Phase 4 — financial reconciliation."""
+    """One row per line of an imported payout/bank CSV. Matched by hand against
+    a Booking — see app/reconcile/ for the import + matching logic."""
 
     __tablename__ = "transactions"
 
     id = Column(Integer, primary_key=True)
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=True)
     booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=True)
-    source = Column(String, nullable=True)  # e.g. "airbnb_payout", "bank_statement"
-    amount = Column(String, nullable=True)
-    occurred_at = Column(DateTime, nullable=True)
+    source = Column(String, nullable=False)  # e.g. "airbnb_payout", "bank_statement"
+    amount = Column(Numeric(10, 2), nullable=False)
+    occurred_at = Column(DateTime, nullable=False)
     matched = Column(Boolean, default=False)
     raw_note = Column(Text, nullable=True)
+    imported_at = Column(DateTime, default=datetime.utcnow)
+
+    property = relationship("Property")
+    booking = relationship("Booking", back_populates="transactions")

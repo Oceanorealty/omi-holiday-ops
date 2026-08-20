@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Finance — Omi Holiday{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Finance</h1>
+</div>
+
+{% if error %}
+<div class="banner banner-warn">⚠️ {{ error }}</div>
+{% endif %}
+
+<section class="card">
+  <h2>Import transactions</h2>
+  <p class="muted" style="margin-top:-8px; margin-bottom:12px">
+    CSV with columns <code>date</code>, <code>amount</code>, and optionally <code>note</code>
+    (any order, extra columns ignored). Export from your bank or platform payout report,
+    then rename columns to match before uploading.
+  </p>
+  <form method="post" action="/transactions/upload" enctype="multipart/form-data" class="form-row">
+    <select name="source" required>
+      <option value="airbnb_payout">Airbnb payout</option>
+      <option value="booking_com_payout">Booking.com payout</option>
+      <option value="ctrip_payout">Ctrip payout</option>
+      <option value="bank_statement">Bank statement</option>
+      <option value="other">Other</option>
+    </select>
+    <select name="property_id">
+      <option value="">(no property pre-set)</option>
+      {% for p in properties %}
+      <option value="{{ p.id }}">{{ p.name }}</option>
+      {% endfor %}
+    </select>
+    <input type="file" name="file" accept=".csv" required />
+    <button class="btn primary" type="submit">Upload</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Monthly reconciliation</h2>
+  {% if summary|length == 0 %}
+  <p class="muted">No matched transactions or priced bookings yet — nothing to reconcile.</p>
+  {% else %}
+  <table class="table small">
+    <thead>
+      <tr><th>Property</th><th>Month</th><th>Expected</th><th>Received</th><th>Variance</th></tr>
+    </thead>
+    <tbody>
+      {% for row in summary %}
+      <tr>
+        <td>{{ row.property_name }}</td>
+        <td>{{ row.month }}</td>
+        <td>${{ '%.2f'|format(row.expected) }}</td>
+        <td>${{ '%.2f'|format(row.received) }}</td>
+        <td>
+          <span class="tag {{ 'tag-ok' if row.variance == 0 else 'tag-warn' }}">
+            {{ '+' if row.variance > 0 else '' }}${{ '%.2f'|format(row.variance) }}
+          </span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Unmatched transactions ({{ unmatched|length }})</h2>
+  {% if unmatched|length == 0 %}
+  <p class="muted">Nothing waiting on a match.</p>
+  {% else %}
+  <table class="table small">
+    <thead>
+      <tr><th>Date</th><th>Amount</th><th>Source</th><th>Note</th><th>Match to booking</th></tr>
+    </thead>
+    <tbody>
+      {% for t in unmatched %}
+      <tr>
+        <td>{{ t.occurred_at.strftime('%Y-%m-%d') }}</td>
+        <td>${{ '%.2f'|format(t.amount) }}</td>
+        <td>{{ t.source.replace('_', ' ') }}</td>
+        <td class="truncate">{{ t.raw_note or '—' }}</td>
+        <td>
+          {% set candidates = suggestions.get(t.id, []) %}
+          {% if candidates %}
+          <form method="post" action="/transactions/{{ t.id }}/match" class="inline-form">
+            <select name="booking_id">
+              {% for b in candidates %}
+              <option value="{{ b.id }}">
+                {{ b.property.name }} · out {{ b.check_out.strftime('%Y-%m-%d') }}
+                {{ '· $' + '%.2f'|format(b.amount) if b.amount is not none else '' }}
+              </option>
+              {% endfor %}
+            </select>
+            <button class="btn tiny" type="submit">match</button>
+          </form>
+          {% else %}
+          <span class="muted">no candidate bookings nearby</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+{% if matched %}
+<section class="card">
+  <h2>Recently matched</h2>
+  <table class="table small">
+    <thead>
+      <tr><th>Date</th><th>Amount</th><th>Property</th><th>Booking checkout</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for t in matched %}
+      <tr>
+        <td>{{ t.occurred_at.strftime('%Y-%m-%d') }}</td>
+        <td>${{ '%.2f'|format(t.amount) }}</td>
+        <td>{{ t.booking.property.name if t.booking else '—' }}</td>
+        <td>{{ t.booking.check_out.strftime('%Y-%m-%d') if t.booking else '—' }}</td>
+        <td>
+          <form method="post" action="/transactions/{{ t.id }}/unmatch">
+            <button class="btn tiny" type="submit">unmatch</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% endblock %}
