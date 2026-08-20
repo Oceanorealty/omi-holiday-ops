@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Properties — Omi Holiday{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Properties</h1>
+</div>
+
+<section class="card">
+  <h2>Add a property</h2>
+  <form method="post" action="/properties" class="form-row">
+    <input type="text" name="name" placeholder="Property name" required />
+    <input type="text" name="address" placeholder="Address (optional)" />
+    <input type="text" name="default_cleaner" placeholder="Default cleaner (optional)" />
+    <button class="btn primary" type="submit">Add property</button>
+  </form>
+</section>
+
+{% for p in properties %}
+<section class="card">
+  <h2>{{ p.name }}</h2>
+  {% if p.address %}<p class="muted">{{ p.address }}</p>{% endif %}
+
+  <table class="table small">
+    <thead>
+      <tr><th>Platform</th><th>Feed URL</th><th>Last synced</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for feed in p.ical_feeds %}
+      <tr>
+        <td><span class="pill pill-{{ feed.platform.value }}">{{ feed.platform.value.replace('_', '.') }}</span></td>
+        <td class="truncate">{{ feed.url }}</td>
+        <td>{{ feed.last_synced_at.strftime('%Y-%m-%d %H:%M') if feed.last_synced_at else 'never' }}</td>
+        <td>{% if feed.last_sync_error %}<span class="tag tag-warn">error</span>{% else %}<span class="tag tag-ok">ok</span>{% endif %}</td>
+        <td>
+          <form method="post" action="/feeds/{{ feed.id }}/delete">
+            <button class="btn tiny" type="submit">remove</button>
+          </form>
+        </td>
+      </tr>
+      {% if feed.last_sync_error %}
+      <tr><td colspan="5" class="error-detail">{{ feed.last_sync_error }}</td></tr>
+      {% endif %}
+      {% else %}
+      <tr><td colspan="5" class="muted">No iCal feeds yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <form method="post" action="/properties/{{ p.id }}/feeds" class="form-row">
+    <select name="platform">
+      {% for plat in platforms %}
+      <option value="{{ plat.value }}">{{ plat.value.replace('_', '.') }}</option>
+      {% endfor %}
+    </select>
+    <input type="text" name="url" placeholder="iCal feed URL" required style="flex:1" />
+    <button class="btn" type="submit">Add feed</button>
+  </form>
+</section>
+{% endfor %}
+
+{% endblock %}

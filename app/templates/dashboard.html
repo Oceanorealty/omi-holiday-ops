@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Bookings — Omi Holiday{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Bookings</h1>
+  <form method="post" action="/sync">
+    <button class="btn primary" type="submit">Sync now</button>
+  </form>
+</div>
+
+{% if conflicts %}
+<div class="banner banner-warn">
+  ⚠️ {{ conflicts|length }} double-booking conflict{{ 's' if conflicts|length != 1 else '' }} detected — same property, overlapping dates across platforms.
+</div>
+{% endif %}
+
+{% if properties|length == 0 %}
+<div class="empty-state">
+  <p>No properties yet.</p>
+  <a class="btn primary" href="/properties">Add your first property</a>
+</div>
+{% elif bookings|length == 0 %}
+<div class="empty-state">
+  <p>No bookings synced yet.</p>
+  <a class="btn" href="/properties">Add an iCal feed</a>, then click <strong>Sync now</strong>.
+</div>
+{% else %}
+<table class="table">
+  <thead>
+    <tr>
+      <th>Property</th>
+      <th>Platform</th>
+      <th>Guest / Summary</th>
+      <th>Check-in</th>
+      <th>Check-out</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for b in bookings %}
+    <tr class="{{ 'conflict' if b.has_conflict else '' }}">
+      <td>{{ b.property.name }}</td>
+      <td><span class="pill pill-{{ b.platform.value }}">{{ b.platform.value.replace('_', '.') }}</span></td>
+      <td>{{ b.summary or '—' }}</td>
+      <td>{{ b.check_in.strftime('%Y-%m-%d') }}</td>
+      <td>{{ b.check_out.strftime('%Y-%m-%d') }}</td>
+      <td>{% if b.has_conflict %}<span class="tag tag-warn">conflict</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% endblock %}
