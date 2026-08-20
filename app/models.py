@@ -119,8 +119,6 @@ class Booking(Base):
 
 
 class CleaningTask(Base):
-    """Stubbed for Phase 3 — schema exists now so Phase 1 data doesn't need a migration later."""
-
     __tablename__ = "cleaning_tasks"
 
     id = Column(Integer, primary_key=True)

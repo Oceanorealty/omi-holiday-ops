@@ -12,6 +12,8 @@ from app.db import Base, SessionLocal, engine
 from app.models import (
     Booking,
     BookingStatus,
+    CleaningStatus,
+    CleaningTask,
     Guest,
     IcalFeed,
     MessageLog,
@@ -19,6 +21,7 @@ from app.models import (
     PlatformName,
     Property,
 )
+from app.sync.cleaning import sync_cleaning_tasks
 from app.sync.ical_sync import recompute_conflicts, sync_all, sync_feed
 
 Base.metadata.create_all(bind=engine)
@@ -35,6 +38,7 @@ def _scheduled_sync():
     db = SessionLocal()
     try:
         sync_all(db)
+        sync_cleaning_tasks(db)
         process_due_messages(db)
     finally:
         db.close()
@@ -99,6 +103,7 @@ def trigger_sync():
     db = SessionLocal()
     try:
         sync_all(db)
+        sync_cleaning_tasks(db)
         process_due_messages(db)
     finally:
         db.close()
@@ -189,10 +194,11 @@ def add_feed(property_id: int, platform: str = Form(...), url: str = Form(...)):
         db.add(feed)
         db.commit()
         db.refresh(feed)
-        # Sync immediately so the new feed's data — and any conflicts it creates
-        # against existing bookings — shows up without waiting for the schedule.
+        # Sync immediately so the new feed's data — and any conflicts or cleaning
+        # tasks it creates — shows up without waiting for the schedule.
         sync_feed(db, feed)
         recompute_conflicts(db)
+        sync_cleaning_tasks(db)
     finally:
         db.close()
     return RedirectResponse(url="/properties", status_code=303)
@@ -209,3 +215,69 @@ def delete_feed(feed_id: int):
     finally:
         db.close()
     return RedirectResponse(url="/properties", status_code=303)
+
+
+@app.get("/cleaning")
+def cleaning_page(request: Request):
+    db = SessionLocal()
+    try:
+        tasks = (
+            db.query(CleaningTask)
+            .filter(CleaningTask.status != CleaningStatus.done)
+            .order_by(CleaningTask.due_date)
+            .all()
+        )
+        done_tasks = (
+            db.query(CleaningTask)
+            .filter(CleaningTask.status == CleaningStatus.done)
+            .order_by(CleaningTask.due_date.desc())
+            .limit(20)
+            .all()
+        )
+        return templates.TemplateResponse(
+            "cleaning.html",
+            {"request": request, "tasks": tasks, "done_tasks": done_tasks, "now": datetime.utcnow()},
+        )
+    finally:
+        db.close()
+
+
+@app.post("/cleaning/{task_id}/assign")
+def assign_cleaning_task(task_id: int, assignee: str = Form("")):
+    db = SessionLocal()
+    try:
+        task = db.get(CleaningTask, task_id)
+        if task:
+            task.assignee = assignee or None
+            if task.status != CleaningStatus.done:
+                task.status = CleaningStatus.assigned if assignee else CleaningStatus.pending
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/cleaning", status_code=303)
+
+
+@app.post("/cleaning/{task_id}/done")
+def complete_cleaning_task(task_id: int):
+    db = SessionLocal()
+    try:
+        task = db.get(CleaningTask, task_id)
+        if task:
+            task.status = CleaningStatus.done
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/cleaning", status_code=303)
+
+
+@app.post("/cleaning/{task_id}/reopen")
+def reopen_cleaning_task(task_id: int):
+    db = SessionLocal()
+    try:
+        task = db.get(CleaningTask, task_id)
+        if task:
+            task.status = CleaningStatus.assigned if task.assignee else CleaningStatus.pending
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/cleaning", status_code=303)

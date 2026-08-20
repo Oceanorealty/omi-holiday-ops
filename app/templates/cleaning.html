@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Cleaning — Omi Holiday{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Cleaning</h1>
+  <form method="post" action="/sync">
+    <button class="btn primary" type="submit">Sync now</button>
+  </form>
+</div>
+
+{% if tasks|length == 0 %}
+<div class="empty-state">
+  <p>No cleaning tasks due. They're created automatically from checkout dates when bookings sync.</p>
+</div>
+{% else %}
+<table class="table">
+  <thead>
+    <tr>
+      <th>Property</th>
+      <th>Due (checkout)</th>
+      <th>Guest</th>
+      <th>Assignee</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in tasks %}
+    <tr class="{{ 'conflict' if t.due_date.date() < now.date() else '' }}">
+      <td>{{ t.booking.property.name }}</td>
+      <td>
+        {{ t.due_date.strftime('%Y-%m-%d') }}
+        {% if t.due_date.date() < now.date() %}<span class="tag tag-warn">overdue</span>{% endif %}
+      </td>
+      <td>{{ t.booking.guest.name if t.booking.guest and t.booking.guest.name else (t.booking.summary or '—') }}</td>
+      <td>
+        <form method="post" action="/cleaning/{{ t.id }}/assign" class="inline-form">
+          <input type="text" name="assignee" placeholder="assignee" value="{{ t.assignee or '' }}" />
+          <button class="btn tiny" type="submit">save</button>
+        </form>
+      </td>
+      <td><span class="tag {{ 'tag-ok' if t.status.value == 'assigned' else 'tag-warn' }}">{{ t.status.value }}</span></td>
+      <td>
+        <form method="post" action="/cleaning/{{ t.id }}/done">
+          <button class="btn tiny" type="submit">mark done</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if done_tasks %}
+<h2 style="margin-top:24px">Recently completed</h2>
+<table class="table small">
+  <thead>
+    <tr>
+      <th>Property</th>
+      <th>Checkout</th>
+      <th>Assignee</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in done_tasks %}
+    <tr>
+      <td>{{ t.booking.property.name }}</td>
+      <td>{{ t.due_date.strftime('%Y-%m-%d') }}</td>
+      <td>{{ t.assignee or '—' }}</td>
+      <td>
+        <form method="post" action="/cleaning/{{ t.id }}/reopen">
+          <button class="btn tiny" type="submit">reopen</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% endblock %}
