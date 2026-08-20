@@ -8,9 +8,15 @@ https://ops.omiholiday.com (deployed on Render, free tier + Neon Postgres).
   tracked by hand across Airbnb / Booking.com / Ctrip.
 - **Phase 2** — automated guest email at each booking lifecycle stage
   (confirmed, pre-arrival, check-in day, post-checkout).
+- **Phase 3** — cleaning tasks auto-created from checkout dates; assign,
+  complete, reopen.
+- **Phase 4** — financial reconciliation: import a payout/bank CSV, match
+  transactions to bookings (human-confirmed, not auto-matched), see expected
+  vs. received per property per month.
 
-See `/Users/alanpan/.claude/plans/temporal-questing-stream.md` for the full
-phased roadmap (cleaning dispatch and financial reconciliation are Phase 3–4).
+All four phases are live. See
+`/Users/alanpan/.claude/plans/temporal-questing-stream.md` for the original
+phased plan.
 
 ## Run it locally
 
@@ -35,6 +41,10 @@ end to end without needing real credentials for local dev.
 | `SMTP_PASSWORD` | Mailbox password |
 | `SMTP_FROM` | Optional; defaults to `SMTP_USER` if unset |
 
+`SMTP_PORT` note: `465` is implicit SSL, `587` is STARTTLS — the mailer
+picks the right handshake based on which port you set. SiteGround-hosted
+mailboxes (like `bookings@omiholiday.com`) use 465.
+
 ## How to use
 
 1. Go to **Properties**, add a property.
@@ -51,10 +61,24 @@ end to end without needing real credentials for local dev.
 4. Go to **Message Templates** to edit the four guest emails (placeholders:
    `{guest_name}`, `{property_name}`, `{check_in}`, `{check_out}`).
 5. Click **Sync now** any time to force an immediate refresh — this also
-   sends any due guest messages, same as the 30-minute background job.
+   sends due guest messages and creates/updates cleaning tasks, same as the
+   30-minute background job.
+6. Go to **Cleaning** to assign/reassign a cleaner per task and mark done.
+7. Go to **Finance** to record each booking's expected amount (inline on
+   the Bookings page), upload a payout/bank CSV, and match transactions to
+   bookings. The monthly summary only reflects bookings with an amount set
+   and transactions that have been matched.
 
 ## Data model
 
 `app/models.py` — properties, iCal feeds, bookings, guests, message
-templates/logs, plus `CleaningTask` and `Transaction` tables stubbed in now
-so Phase 3/4 don't need a schema migration later.
+templates/logs, cleaning tasks, transactions.
+
+## Migrations
+
+No Alembic yet — `app/migrate.py` runs a couple of hand-written, idempotent
+`ALTER`/`DROP` statements at startup for the two schema changes made after
+the initial deploy (adding `bookings.amount`, reshaping `transactions`).
+Any future schema change to an already-deployed table needs the same
+treatment: a guarded check-then-alter in `migrate.py`, tested against a
+copy of production data before deploying.
