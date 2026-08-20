@@ -24,3 +24,20 @@ def run(engine) -> None:
             # and let create_all() rebuild it with the current schema.
             with engine.begin() as conn:
                 conn.execute(text("DROP TABLE transactions"))
+
+    if "properties" in existing_tables:
+        columns = {c["name"] for c in inspector.get_columns("properties")}
+        new_columns = {
+            "published": "BOOLEAN DEFAULT FALSE",
+            "suburb": "VARCHAR",
+            "photo_url": "VARCHAR",
+            "description": "TEXT",
+            "bedrooms": "INTEGER",
+            "bathrooms": "INTEGER",
+            "max_guests": "INTEGER",
+            "listing_url": "VARCHAR",
+        }
+        with engine.begin() as conn:
+            for name, ddl_type in new_columns.items():
+                if name not in columns:
+                    conn.execute(text(f"ALTER TABLE properties ADD COLUMN {name} {ddl_type}"))

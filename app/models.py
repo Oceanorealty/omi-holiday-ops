@@ -60,6 +60,18 @@ class Property(Base):
     default_cleaner = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # Public listing fields — surfaced on the omiholiday.com website via
+    # /api/public/properties when published=True. Not used anywhere else
+    # in the ops tool itself.
+    published = Column(Boolean, default=False)
+    suburb = Column(String, nullable=True)
+    photo_url = Column(String, nullable=True)
+    description = Column(Text, nullable=True)
+    bedrooms = Column(Integer, nullable=True)
+    bathrooms = Column(Integer, nullable=True)
+    max_guests = Column(Integer, nullable=True)
+    listing_url = Column(String, nullable=True)
+
     ical_feeds = relationship("IcalFeed", back_populates="property", cascade="all, delete-orphan")
     bookings = relationship("Booking", back_populates="property", cascade="all, delete-orphan")
 

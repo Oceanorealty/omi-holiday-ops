@@ -6,6 +6,7 @@ import secrets as secrets_module
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, Form, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -42,6 +43,14 @@ with SessionLocal() as _db:
 
 app = FastAPI(title="Omi Holiday — Operations")
 app.add_middleware(SessionAuthMiddleware)
+# Outermost middleware — lets omiholiday.com fetch /api/public/* directly
+# from the visitor's own browser (a different origin), read-only.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://omiholiday.com", "https://www.omiholiday.com"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
 templates = Jinja2Templates(directory="app/templates")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
@@ -225,6 +234,33 @@ def update_template(
     return RedirectResponse(url="/templates", status_code=303)
 
 
+@app.get("/api/public/properties")
+def public_properties():
+    db = SessionLocal()
+    try:
+        properties = (
+            db.query(Property)
+            .filter(Property.published.is_(True))
+            .order_by(Property.name)
+            .all()
+        )
+        return [
+            {
+                "name": p.name,
+                "suburb": p.suburb,
+                "photo_url": p.photo_url,
+                "description": p.description,
+                "bedrooms": p.bedrooms,
+                "bathrooms": p.bathrooms,
+                "max_guests": p.max_guests,
+                "listing_url": p.listing_url,
+            }
+            for p in properties
+        ]
+    finally:
+        db.close()
+
+
 @app.get("/properties")
 def properties_page(request: Request):
     db = SessionLocal()
@@ -245,6 +281,36 @@ def create_property(name: str = Form(...), address: str = Form(""), default_clea
         prop = Property(name=name, address=address or None, default_cleaner=default_cleaner or None)
         db.add(prop)
         db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/properties", status_code=303)
+
+
+@app.post("/properties/{property_id}/listing")
+def update_property_listing(
+    property_id: int,
+    suburb: str = Form(""),
+    photo_url: str = Form(""),
+    description: str = Form(""),
+    bedrooms: str = Form(""),
+    bathrooms: str = Form(""),
+    max_guests: str = Form(""),
+    listing_url: str = Form(""),
+    published: str = Form(""),
+):
+    db = SessionLocal()
+    try:
+        prop = db.get(Property, property_id)
+        if prop:
+            prop.suburb = suburb or None
+            prop.photo_url = photo_url or None
+            prop.description = description or None
+            prop.bedrooms = int(bedrooms) if bedrooms.strip().isdigit() else None
+            prop.bathrooms = int(bathrooms) if bathrooms.strip().isdigit() else None
+            prop.max_guests = int(max_guests) if max_guests.strip().isdigit() else None
+            prop.listing_url = listing_url or None
+            prop.published = bool(published)
+            db.commit()
     finally:
         db.close()
     return RedirectResponse(url="/properties", status_code=303)

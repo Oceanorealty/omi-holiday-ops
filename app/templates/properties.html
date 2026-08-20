@@ -18,8 +18,26 @@
 
 {% for p in properties %}
 <section class="card">
-  <h2>{{ p.name }}</h2>
+  <h2>{{ p.name }}
+    {% if p.published %}<span class="tag tag-ok">live on website</span>{% else %}<span class="tag tag-warn">not published</span>{% endif %}
+  </h2>
   {% if p.address %}<p class="muted">{{ p.address }}</p>{% endif %}
+
+  <h2 style="margin-top:20px">Website listing</h2>
+  <form method="post" action="/properties/{{ p.id }}/listing" class="form-row" style="align-items:flex-start">
+    <input type="text" name="suburb" placeholder="Suburb (e.g. Broadbeach)" value="{{ p.suburb or '' }}" />
+    <input type="text" name="photo_url" placeholder="Photo URL" value="{{ p.photo_url or '' }}" style="flex:1;min-width:220px" />
+    <input type="number" name="bedrooms" placeholder="Beds" value="{{ p.bedrooms if p.bedrooms is not none else '' }}" style="width:80px" />
+    <input type="number" name="bathrooms" placeholder="Baths" value="{{ p.bathrooms if p.bathrooms is not none else '' }}" style="width:80px" />
+    <input type="number" name="max_guests" placeholder="Guests" value="{{ p.max_guests if p.max_guests is not none else '' }}" style="width:80px" />
+    <input type="text" name="listing_url" placeholder="Booking link (Airbnb/Booking.com/etc)" value="{{ p.listing_url or '' }}" style="flex:1;min-width:220px" />
+    <textarea name="description" placeholder="Short description for the website" style="flex-basis:100%">{{ p.description or '' }}</textarea>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px">
+      <input type="checkbox" name="published" value="1" {% if p.published %}checked{% endif %} />
+      Show on omiholiday.com
+    </label>
+    <button class="btn primary" type="submit">Save listing</button>
+  </form>
 
   <div class="table-wrap">
   <table class="table small">
