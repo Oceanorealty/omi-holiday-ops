@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Message Templates — Omi Holiday{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Message Templates</h1>
+</div>
+
+<p class="muted" style="margin-bottom:16px">
+  Sent automatically: booking confirmed (right away), pre-arrival (3 days before check-in),
+  check-in day, and post-checkout (the day after checkout). Use
+  <code>{guest_name}</code>, <code>{property_name}</code>, <code>{check_in}</code>, <code>{check_out}</code> as placeholders.
+</p>
+
+{% for t in message_templates %}
+<section class="card">
+  <h2>{{ t.trigger_event.value.replace('_', ' ')|title }}</h2>
+  <form method="post" action="/templates/{{ t.id }}">
+    <div class="field">
+      <label>Subject</label>
+      <input type="text" name="subject" value="{{ t.subject }}" required />
+    </div>
+    <div class="field">
+      <label>Body</label>
+      <textarea name="body" rows="5" required>{{ t.body }}</textarea>
+    </div>
+    <label style="font-size:13px; display:flex; align-items:center; gap:6px; margin-bottom:10px">
+      <input type="checkbox" name="active" value="1" {{ 'checked' if t.active else '' }} />
+      Active
+    </label>
+    <button class="btn primary" type="submit">Save</button>
+  </form>
+</section>
+{% endfor %}
+
+{% endblock %}

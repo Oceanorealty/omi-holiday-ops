@@ -6,11 +6,25 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from app.comms.templates import seed_default_templates
+from app.comms.triggers import process_due_messages
 from app.db import Base, SessionLocal, engine
-from app.models import Booking, BookingStatus, IcalFeed, PlatformName, Property
+from app.models import (
+    Booking,
+    BookingStatus,
+    Guest,
+    IcalFeed,
+    MessageLog,
+    MessageTemplate,
+    PlatformName,
+    Property,
+)
 from app.sync.ical_sync import recompute_conflicts, sync_all, sync_feed
 
 Base.metadata.create_all(bind=engine)
+
+with SessionLocal() as _db:
+    seed_default_templates(_db)
 
 app = FastAPI(title="Omi Holiday — Operations")
 templates = Jinja2Templates(directory="app/templates")
@@ -21,6 +35,7 @@ def _scheduled_sync():
     db = SessionLocal()
     try:
         sync_all(db)
+        process_due_messages(db)
     finally:
         db.close()
 
@@ -53,6 +68,17 @@ def dashboard(request: Request):
         )
         conflicts = [b for b in bookings if b.has_conflict]
         properties = db.query(Property).order_by(Property.name).all()
+
+        logs_by_booking: dict[int, list] = {}
+        if bookings:
+            logs = (
+                db.query(MessageLog)
+                .filter(MessageLog.booking_id.in_([b.id for b in bookings]))
+                .all()
+            )
+            for log in logs:
+                logs_by_booking.setdefault(log.booking_id, []).append(log)
+
         return templates.TemplateResponse(
             "dashboard.html",
             {
@@ -60,6 +86,7 @@ def dashboard(request: Request):
                 "bookings": bookings,
                 "conflicts": conflicts,
                 "properties": properties,
+                "logs_by_booking": logs_by_booking,
                 "now": datetime.utcnow(),
             },
         )
@@ -72,9 +99,61 @@ def trigger_sync():
     db = SessionLocal()
     try:
         sync_all(db)
+        process_due_messages(db)
     finally:
         db.close()
     return RedirectResponse(url="/", status_code=303)
+
+
+@app.post("/bookings/{booking_id}/guest")
+def update_guest(booking_id: int, name: str = Form(""), email: str = Form("")):
+    db = SessionLocal()
+    try:
+        booking = db.get(Booking, booking_id)
+        if booking:
+            if not booking.guest:
+                booking.guest = Guest()
+                db.add(booking.guest)
+            booking.guest.name = name or None
+            booking.guest.email = email or None
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.get("/templates")
+def templates_page(request: Request):
+    db = SessionLocal()
+    try:
+        message_templates = (
+            db.query(MessageTemplate).order_by(MessageTemplate.trigger_event).all()
+        )
+        return templates.TemplateResponse(
+            "templates.html", {"request": request, "message_templates": message_templates}
+        )
+    finally:
+        db.close()
+
+
+@app.post("/templates/{template_id}")
+def update_template(
+    template_id: int,
+    subject: str = Form(...),
+    body: str = Form(...),
+    active: str = Form(""),
+):
+    db = SessionLocal()
+    try:
+        template = db.get(MessageTemplate, template_id)
+        if template:
+            template.subject = subject
+            template.body = body
+            template.active = bool(active)
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/templates", status_code=303)
 
 
 @app.get("/properties")

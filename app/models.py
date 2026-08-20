@@ -36,6 +36,20 @@ class CleaningStatus(str, enum.Enum):
     done = "done"
 
 
+class TriggerEvent(str, enum.Enum):
+    booking_confirmed = "booking_confirmed"
+    pre_arrival = "pre_arrival"
+    check_in_day = "check_in_day"
+    post_checkout = "post_checkout"
+
+
+class MessageStatus(str, enum.Enum):
+    sent = "sent"
+    failed = "failed"
+    skipped_no_email = "skipped_no_email"
+    skipped_no_smtp = "skipped_no_smtp"
+
+
 class Property(Base):
     __tablename__ = "properties"
 
@@ -117,6 +131,37 @@ class CleaningTask(Base):
     status = Column(Enum(CleaningStatus), default=CleaningStatus.pending)
 
     booking = relationship("Booking", back_populates="cleaning_task")
+
+
+class MessageTemplate(Base):
+    """Editable in the dashboard. Seeded with defaults on first startup."""
+
+    __tablename__ = "message_templates"
+
+    id = Column(Integer, primary_key=True)
+    trigger_event = Column(Enum(TriggerEvent), unique=True, nullable=False)
+    subject = Column(String, nullable=False)
+    body = Column(Text, nullable=False)
+    active = Column(Boolean, default=True)
+
+
+class MessageLog(Base):
+    """One row per (booking, trigger_event) — the unique constraint is what makes
+    the send idempotent: re-running the trigger check never double-sends."""
+
+    __tablename__ = "message_logs"
+    __table_args__ = (
+        UniqueConstraint("booking_id", "trigger_event", name="uq_message_booking_trigger"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=False)
+    trigger_event = Column(Enum(TriggerEvent), nullable=False)
+    status = Column(Enum(MessageStatus), nullable=False)
+    error = Column(Text, nullable=True)
+    sent_at = Column(DateTime, default=datetime.utcnow)
+
+    booking = relationship("Booking")
 
 
 class Transaction(Base):

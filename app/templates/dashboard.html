@@ -34,6 +34,8 @@
       <th>Guest / Summary</th>
       <th>Check-in</th>
       <th>Check-out</th>
+      <th>Guest email</th>
+      <th>Messages</th>
       <th></th>
     </tr>
   </thead>
@@ -45,6 +47,18 @@
       <td>{{ b.summary or '—' }}</td>
       <td>{{ b.check_in.strftime('%Y-%m-%d') }}</td>
       <td>{{ b.check_out.strftime('%Y-%m-%d') }}</td>
+      <td>
+        <form method="post" action="/bookings/{{ b.id }}/guest" class="inline-form">
+          <input type="email" name="email" placeholder="guest email" value="{{ b.guest.email if b.guest else '' }}" />
+          <input type="hidden" name="name" value="{{ b.guest.name if b.guest else '' }}" />
+          <button class="btn tiny" type="submit">save</button>
+        </form>
+      </td>
+      <td>
+        {% for log in logs_by_booking.get(b.id, []) %}
+        <span class="tag tag-{{ 'ok' if log.status.value == 'sent' else 'warn' }}" title="{{ log.error or '' }}">{{ log.trigger_event.value.replace('_', ' ') }}: {{ log.status.value.replace('_', ' ') }}</span>
+        {% endfor %}
+      </td>
       <td>{% if b.has_conflict %}<span class="tag tag-warn">conflict</span>{% endif %}</td>
     </tr>
     {% endfor %}
