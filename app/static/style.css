@@ -55,7 +55,22 @@ body {
   text-transform: uppercase;
   color: var(--gold);
 }
-nav { display: flex; gap: 4px; }
+nav { display: flex; gap: 4px; flex: 1; justify-content: center; }
+
+.logout-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(247, 244, 238, 0.7);
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.logout-btn:hover { color: var(--white); border-color: var(--gold); }
 nav a {
   padding: 8px 14px;
   color: rgba(247, 244, 238, 0.75);

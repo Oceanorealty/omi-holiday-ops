@@ -1,6 +1,9 @@
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
+import os
+import secrets as secrets_module
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse
@@ -8,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app import migrate
-from app.auth import BasicAuthMiddleware
+from app.auth import SESSION_COOKIE, SESSION_MAX_AGE, SessionAuthMiddleware, make_session_cookie
 from app.comms.templates import seed_default_templates
 from app.comms.triggers import process_due_messages
 from app.db import Base, SessionLocal, engine
@@ -38,7 +41,7 @@ with SessionLocal() as _db:
     seed_default_templates(_db)
 
 app = FastAPI(title="Omi Holiday — Operations")
-app.add_middleware(BasicAuthMiddleware)
+app.add_middleware(SessionAuthMiddleware)
 templates = Jinja2Templates(directory="app/templates")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
@@ -67,6 +70,42 @@ def start_scheduler():
 def stop_scheduler():
     if scheduler.running:
         scheduler.shutdown(wait=False)
+
+
+@app.get("/login")
+def login_page(request: Request, next: str = "/", error: str = ""):
+    return templates.TemplateResponse(
+        "login.html", {"request": request, "next": next, "error": error}
+    )
+
+
+@app.post("/login")
+def login_submit(username: str = Form(...), password: str = Form(...), next: str = Form("/")):
+    admin_user = os.environ.get("ADMIN_USER", "")
+    admin_password = os.environ.get("ADMIN_PASSWORD", "")
+
+    user_ok = secrets_module.compare_digest(username, admin_user)
+    pass_ok = secrets_module.compare_digest(password, admin_password)
+
+    if user_ok and pass_ok:
+        response = RedirectResponse(url=next or "/", status_code=303)
+        response.set_cookie(
+            SESSION_COOKIE,
+            make_session_cookie(),
+            max_age=SESSION_MAX_AGE,
+            httponly=True,
+            samesite="lax",
+        )
+        return response
+
+    return RedirectResponse(url=f"/login?error=1&next={next}", status_code=303)
+
+
+@app.post("/logout")
+def logout():
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie(SESSION_COOKIE)
+    return response
 
 
 @app.get("/")

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in — Omi Holiday Operations</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;1,9..144,400&family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0d0c1f;
+      font-family: "Jost", -apple-system, sans-serif;
+    }
+    .login-card {
+      width: 100%;
+      max-width: 340px;
+      padding: 40px 32px;
+      text-align: center;
+    }
+    .brand-mark {
+      font-family: "Fraunces", serif;
+      font-style: italic;
+      font-weight: 500;
+      font-size: 34px;
+      color: #ffffff;
+      display: block;
+    }
+    .brand-sub {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #c9a86a;
+      display: block;
+      margin-top: 6px;
+      margin-bottom: 36px;
+    }
+    .field { margin-bottom: 14px; text-align: left; }
+    .field input {
+      width: 100%;
+      padding: 12px 16px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.06);
+      color: #f7f4ee;
+      font-family: inherit;
+      font-size: 14px;
+    }
+    .field input::placeholder { color: rgba(247, 244, 238, 0.4); }
+    .field input:focus { outline: none; border-color: #c9a86a; }
+    .btn-submit {
+      width: 100%;
+      padding: 12px;
+      margin-top: 8px;
+      border-radius: 999px;
+      border: none;
+      background: #c9a86a;
+      color: #0d0c1f;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    .btn-submit:hover { opacity: 0.9; }
+    .error {
+      color: #e8b4a0;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <span class="brand-mark">omi</span>
+    <span class="brand-sub">Operations</span>
+
+    {% if error %}
+    <p class="error">Incorrect username or password.</p>
+    {% endif %}
+
+    <form method="post" action="/login">
+      <input type="hidden" name="next" value="{{ next }}" />
+      <div class="field">
+        <input type="text" name="username" placeholder="Username" required autofocus />
+      </div>
+      <div class="field">
+        <input type="password" name="password" placeholder="Password" required />
+      </div>
+      <button class="btn-submit" type="submit">Sign in</button>
+    </form>
+  </div>
+</body>
+</html>

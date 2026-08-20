@@ -22,6 +22,9 @@
       <a href="/properties" class="{{ 'active' if request.url.path == '/properties' else '' }}">Properties</a>
       <a href="/templates" class="{{ 'active' if request.url.path == '/templates' else '' }}">Message Templates</a>
     </nav>
+    <form method="post" action="/logout">
+      <button class="logout-btn" type="submit">Sign out</button>
+    </form>
   </header>
   <main class="container">
     {% block content %}{% endblock %}
