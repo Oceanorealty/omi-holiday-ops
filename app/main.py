@@ -7,9 +7,10 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from app import migrate
+from app.auth import BasicAuthMiddleware
 from app.comms.templates import seed_default_templates
 from app.comms.triggers import process_due_messages
-from app import migrate
 from app.db import Base, SessionLocal, engine
 from app.models import (
     Booking,
@@ -37,6 +38,7 @@ with SessionLocal() as _db:
     seed_default_templates(_db)
 
 app = FastAPI(title="Omi Holiday — Operations")
+app.add_middleware(BasicAuthMiddleware)
 templates = Jinja2Templates(directory="app/templates")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
