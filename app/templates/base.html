@@ -4,17 +4,23 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block title %}Omi Holiday — Operations{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">Omi Holiday <span>Operations</span></div>
+    <a class="brand" href="/">
+      <span class="brand-mark">omi</span>
+      <span class="brand-sub">Operations</span>
+    </a>
     <nav>
-      <a href="/">Bookings</a>
-      <a href="/cleaning">Cleaning</a>
-      <a href="/transactions">Finance</a>
-      <a href="/properties">Properties</a>
-      <a href="/templates">Message Templates</a>
+      <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">Bookings</a>
+      <a href="/cleaning" class="{{ 'active' if request.url.path == '/cleaning' else '' }}">Cleaning</a>
+      <a href="/transactions" class="{{ 'active' if request.url.path == '/transactions' else '' }}">Finance</a>
+      <a href="/properties" class="{{ 'active' if request.url.path == '/properties' else '' }}">Properties</a>
+      <a href="/templates" class="{{ 'active' if request.url.path == '/templates' else '' }}">Message Templates</a>
     </nav>
   </header>
   <main class="container">

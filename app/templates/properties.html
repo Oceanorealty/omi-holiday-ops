@@ -21,6 +21,7 @@
   <h2>{{ p.name }}</h2>
   {% if p.address %}<p class="muted">{{ p.address }}</p>{% endif %}
 
+  <div class="table-wrap">
   <table class="table small">
     <thead>
       <tr><th>Platform</th><th>Feed URL</th><th>Last synced</th><th>Status</th><th></th></tr>
@@ -46,6 +47,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 
   <form method="post" action="/properties/{{ p.id }}/feeds" class="form-row">
     <select name="platform">

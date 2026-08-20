@@ -41,6 +41,7 @@
   {% if summary|length == 0 %}
   <p class="muted">No matched transactions or priced bookings yet — nothing to reconcile.</p>
   {% else %}
+  <div class="table-wrap">
   <table class="table small">
     <thead>
       <tr><th>Property</th><th>Month</th><th>Expected</th><th>Received</th><th>Variance</th></tr>
@@ -61,6 +62,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% endif %}
 </section>
 
@@ -69,6 +71,7 @@
   {% if unmatched|length == 0 %}
   <p class="muted">Nothing waiting on a match.</p>
   {% else %}
+  <div class="table-wrap">
   <table class="table small">
     <thead>
       <tr><th>Date</th><th>Amount</th><th>Source</th><th>Note</th><th>Match to booking</th></tr>
@@ -102,12 +105,14 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% endif %}
 </section>
 
 {% if matched %}
 <section class="card">
   <h2>Recently matched</h2>
+  <div class="table-wrap">
   <table class="table small">
     <thead>
       <tr><th>Date</th><th>Amount</th><th>Property</th><th>Booking checkout</th><th></th></tr>
@@ -128,6 +133,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 {% endif %}
 
