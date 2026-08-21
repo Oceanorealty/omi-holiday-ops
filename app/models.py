@@ -102,10 +102,12 @@ class Property(Base):
     owner_portal_token = Column(String, nullable=True, unique=True)
 
     # Pricing strategy — "manual" (default) means rates are set on each OTA
-    # directly; "dynamic" flags intent to hook up a third-party pricing
-    # engine (e.g. PriceLabs, Beyond) later, which needs its own paid API
-    # account — not something this field alone makes happen.
+    # directly; "dynamic" uses the rule-based engine below (see PriceRule)
+    # to suggest a nightly rate from base_nightly_rate. This is a self-
+    # contained rules engine, not a real market-data pricing service like
+    # PriceLabs/Beyond — those need their own paid API account.
     pricing_mode = Column(String, default="manual")
+    base_nightly_rate = Column(Numeric(10, 2), nullable=True)
 
     # Public listing fields — surfaced on the omiholiday.com website via
     # /api/public/properties when published=True. Not used anywhere else
@@ -333,6 +335,39 @@ class Expense(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     property = relationship("Property", back_populates="expenses")
+
+
+class PriceRuleType(str, enum.Enum):
+    day_of_week = "day_of_week"  # e.g. boost Fri/Sat nights
+    date_range = "date_range"  # e.g. summer holidays, a festival week
+    last_minute = "last_minute"  # discount when check-in is soon and still open
+
+
+class PriceRule(Base):
+    """One multiplier applied to Property.base_nightly_rate for nights that
+    match. Multiple active matching rules stack multiplicatively — see
+    app/pricing.py. property_id=None means the rule applies to every
+    property in dynamic pricing mode."""
+
+    __tablename__ = "price_rules"
+
+    id = Column(Integer, primary_key=True)
+    property_id = Column(Integer, ForeignKey("properties.id"), nullable=True)
+    name = Column(String, nullable=False)
+    rule_type = Column(Enum(PriceRuleType), nullable=False)
+
+    # day_of_week: comma-separated ints, Monday=0 .. Sunday=6, e.g. "4,5"
+    days_of_week = Column(String, nullable=True)
+    # date_range: inclusive
+    start_date = Column(DateTime, nullable=True)
+    end_date = Column(DateTime, nullable=True)
+    # last_minute: applies when (check_in - today).days <= this
+    days_before = Column(Integer, nullable=True)
+
+    multiplier = Column(Numeric(4, 2), nullable=False)  # e.g. 1.25 = +25%, 0.85 = -15%
+    active = Column(Boolean, default=True)
+
+    property = relationship("Property")
 
 
 class OwnerStatement(Base):

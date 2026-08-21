@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Pricing — Omi Holiday{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Pricing</h1>
+</div>
+
+<p class="muted" style="margin-top:-8px; margin-bottom:16px">
+  Rule-based rate suggestions for properties in dynamic pricing mode (set on the Properties page).
+  This is a free, self-built rules engine — not a market-data service like PriceLabs. It only ever
+  suggests a number; nothing here pushes a price to Airbnb/Booking.com automatically.
+</p>
+
+<section class="card">
+  <h2>Base rates</h2>
+  {% if properties|length == 0 %}
+  <p class="muted">No properties are in dynamic pricing mode yet — set that on the Properties page first.</p>
+  {% else %}
+  <div class="table-wrap">
+  <table class="table small">
+    <thead><tr><th>Property</th><th>Base nightly rate</th><th></th></tr></thead>
+    <tbody>
+      {% for p in properties %}
+      <tr>
+        <td>{{ p.name }}</td>
+        <td colspan="2">
+          <form method="post" action="/properties/{{ p.id }}/base-rate" class="inline-form">
+            <input type="number" step="0.01" name="base_nightly_rate" value="{{ p.base_nightly_rate if p.base_nightly_rate is not none else '' }}" style="width:110px" />
+            <button class="btn tiny" type="submit">save</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Rules</h2>
+  <form method="post" action="/price-rules" class="form-row" style="align-items:flex-start">
+    <input type="text" name="name" placeholder="Rule name (e.g. Weekend boost)" required style="min-width:180px" />
+    <select name="property_id">
+      <option value="">All properties</option>
+      {% for p in all_properties %}
+      <option value="{{ p.id }}">{{ p.name }}</option>
+      {% endfor %}
+    </select>
+    <select name="rule_type" onchange="document.querySelectorAll('.rule-field').forEach(el=>el.style.display=el.dataset.type===this.value?'':'none')">
+      {% for rt in rule_types %}
+      <option value="{{ rt.value }}">{{ rt.value.replace('_',' ') }}</option>
+      {% endfor %}
+    </select>
+    <input class="rule-field" data-type="day_of_week" type="text" name="days_of_week" placeholder="Days (0=Mon..6=Sun, e.g. 4,5)" style="width:180px" />
+    <input class="rule-field" data-type="date_range" type="date" name="start_date" style="display:none" />
+    <input class="rule-field" data-type="date_range" type="date" name="end_date" style="display:none" />
+    <input class="rule-field" data-type="last_minute" type="number" name="days_before" placeholder="Days before check-in" style="display:none;width:160px" />
+    <input type="number" step="0.01" name="multiplier" placeholder="Multiplier (1.25 = +25%)" required style="width:170px" />
+    <button class="btn primary" type="submit">Add rule</button>
+  </form>
+  <script>
+    document.querySelectorAll('.rule-field').forEach(function(el){ el.style.display = el.dataset.type === 'day_of_week' ? '' : 'none'; });
+  </script>
+
+  {% if rules %}
+  <div class="table-wrap" style="margin-top:12px">
+  <table class="table small">
+    <thead><tr><th>Name</th><th>Applies to</th><th>Type</th><th>Detail</th><th>Multiplier</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      {% for r in rules %}
+      <tr>
+        <td>{{ r.name }}</td>
+        <td>{{ r.property.name if r.property else 'All properties' }}</td>
+        <td>{{ r.rule_type.value.replace('_',' ') }}</td>
+        <td>
+          {% if r.rule_type.value == 'day_of_week' %}{{ r.days_of_week }}
+          {% elif r.rule_type.value == 'date_range' %}{{ r.start_date.strftime('%Y-%m-%d') }} → {{ r.end_date.strftime('%Y-%m-%d') }}
+          {% elif r.rule_type.value == 'last_minute' %}within {{ r.days_before }} days
+          {% endif %}
+        </td>
+        <td>×{{ r.multiplier }}</td>
+        <td><span class="tag {{ 'tag-ok' if r.active else 'tag-warn' }}">{{ 'active' if r.active else 'off' }}</span></td>
+        <td>
+          <form method="post" action="/price-rules/{{ r.id }}/toggle" style="display:inline">
+            <button class="btn tiny" type="submit">{{ 'turn off' if r.active else 'turn on' }}</button>
+          </form>
+          <form method="post" action="/price-rules/{{ r.id }}/delete" style="display:inline">
+            <button class="btn tiny" type="submit">delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Quote a stay</h2>
+  <form method="post" action="/pricing/calculate" class="form-row">
+    <select name="property_id" required>
+      {% for p in properties %}
+      <option value="{{ p.id }}" {% if selected_property and selected_property.id == p.id %}selected{% endif %}>{{ p.name }}</option>
+      {% endfor %}
+    </select>
+    <input type="date" name="check_in" value="{{ selected_check_in or '' }}" required />
+    <input type="date" name="check_out" value="{{ selected_check_out or '' }}" required />
+    <button class="btn primary" type="submit">Calculate</button>
+  </form>
+
+  {% if breakdown %}
+  <div class="table-wrap" style="margin-top:12px">
+  <table class="table small">
+    <thead><tr><th>Night</th><th>Suggested rate</th></tr></thead>
+    <tbody>
+      {% for row in breakdown %}
+      <tr>
+        <td>{{ row.date.strftime('%Y-%m-%d (%a)') }}</td>
+        <td>{% if row.price is not none %}${{ row.price }}{% else %}<span class="muted">no base rate set</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if breakdown_total is not none %}
+  <p style="margin-top:10px"><strong>Total: ${{ breakdown_total }}</strong></p>
+  {% endif %}
+  {% endif %}
+</section>
+
+{% endblock %}

@@ -31,11 +31,14 @@ from app.models import (
     MessageTemplate,
     OwnerStatement,
     PlatformName,
+    PriceRule,
+    PriceRuleType,
     Property,
     StaffRole,
     StaffUser,
     Transaction,
 )
+from app.pricing import price_breakdown
 from app.security import hash_password, verify_password
 from app.reconcile.importer import ImportError_, parse_csv
 from app.reconcile.matching import suggest_bookings
@@ -275,6 +278,149 @@ def update_template(
     finally:
         db.close()
     return RedirectResponse(url="/templates", status_code=303)
+
+
+@app.get("/pricing")
+def pricing_page(request: Request):
+    db = SessionLocal()
+    try:
+        properties = (
+            db.query(Property)
+            .filter(Property.pricing_mode == "dynamic")
+            .order_by(Property.name)
+            .all()
+        )
+        rules = db.query(PriceRule).order_by(PriceRule.name).all()
+        return templates.TemplateResponse(
+            "pricing.html",
+            {
+                "request": request,
+                "properties": properties,
+                "all_properties": db.query(Property).order_by(Property.name).all(),
+                "rules": rules,
+                "rule_types": list(PriceRuleType),
+                "breakdown": None,
+            },
+        )
+    finally:
+        db.close()
+
+
+@app.post("/pricing/calculate")
+def pricing_calculate(request: Request, property_id: int = Form(...), check_in: str = Form(...), check_out: str = Form(...)):
+    db = SessionLocal()
+    try:
+        prop = db.get(Property, property_id)
+        try:
+            ci = datetime.strptime(check_in, "%Y-%m-%d").date()
+            co = datetime.strptime(check_out, "%Y-%m-%d").date()
+        except ValueError:
+            ci = co = None
+
+        breakdown = None
+        total = None
+        if prop and ci and co and co > ci:
+            breakdown = price_breakdown(db, prop, ci, co)
+            if all(r["price"] is not None for r in breakdown):
+                total = sum((r["price"] for r in breakdown), Decimal("0"))
+
+        properties = db.query(Property).filter(Property.pricing_mode == "dynamic").order_by(Property.name).all()
+        rules = db.query(PriceRule).order_by(PriceRule.name).all()
+        return templates.TemplateResponse(
+            "pricing.html",
+            {
+                "request": request,
+                "properties": properties,
+                "all_properties": db.query(Property).order_by(Property.name).all(),
+                "rules": rules,
+                "rule_types": list(PriceRuleType),
+                "breakdown": breakdown,
+                "breakdown_total": total,
+                "selected_property": prop,
+                "selected_check_in": check_in,
+                "selected_check_out": check_out,
+            },
+        )
+    finally:
+        db.close()
+
+
+@app.post("/properties/{property_id}/base-rate")
+def update_base_rate(property_id: int, base_nightly_rate: str = Form("")):
+    db = SessionLocal()
+    try:
+        prop = db.get(Property, property_id)
+        if prop:
+            try:
+                prop.base_nightly_rate = Decimal(base_nightly_rate) if base_nightly_rate.strip() else None
+            except InvalidOperation:
+                pass
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/pricing", status_code=303)
+
+
+@app.post("/price-rules")
+def create_price_rule(
+    name: str = Form(...),
+    rule_type: str = Form(...),
+    multiplier: str = Form(...),
+    property_id: str = Form(""),
+    days_of_week: str = Form(""),
+    start_date: str = Form(""),
+    end_date: str = Form(""),
+    days_before: str = Form(""),
+):
+    db = SessionLocal()
+    try:
+        try:
+            mult = Decimal(multiplier)
+        except InvalidOperation:
+            return RedirectResponse(url="/pricing", status_code=303)
+        rule = PriceRule(
+            name=name,
+            rule_type=PriceRuleType(rule_type),
+            multiplier=mult,
+            property_id=int(property_id) if property_id else None,
+            days_of_week=days_of_week or None,
+            days_before=int(days_before) if days_before.strip().isdigit() else None,
+        )
+        if start_date:
+            rule.start_date = datetime.strptime(start_date, "%Y-%m-%d")
+        if end_date:
+            rule.end_date = datetime.strptime(end_date, "%Y-%m-%d")
+        db.add(rule)
+        db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/pricing", status_code=303)
+
+
+@app.post("/price-rules/{rule_id}/toggle")
+def toggle_price_rule(rule_id: int):
+    db = SessionLocal()
+    try:
+        rule = db.get(PriceRule, rule_id)
+        if rule:
+            rule.active = not rule.active
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/pricing", status_code=303)
+
+
+@app.post("/price-rules/{rule_id}/delete")
+def delete_price_rule(rule_id: int):
+    db = SessionLocal()
+    try:
+        rule = db.get(PriceRule, rule_id)
+        if rule:
+            db.delete(rule)
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/pricing", status_code=303)
 
 
 def _is_admin(request: Request, db) -> bool:

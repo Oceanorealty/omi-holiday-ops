@@ -42,7 +42,7 @@
     <input type="number" step="0.01" name="commission_pct" placeholder="Commission %" value="{{ p.commission_pct if p.commission_pct is not none else '' }}" style="width:120px" />
     <select name="pricing_mode">
       <option value="manual" {% if p.pricing_mode != 'dynamic' %}selected{% endif %}>Manual pricing</option>
-      <option value="dynamic" {% if p.pricing_mode == 'dynamic' %}selected{% endif %}>Dynamic pricing (needs 3rd-party engine)</option>
+      <option value="dynamic" {% if p.pricing_mode == 'dynamic' %}selected{% endif %}>Dynamic pricing (rule-based — see Pricing page)</option>
     </select>
     <select name="cleaner_pay_type">
       <option value="">Cleaner pay type</option>

@@ -49,6 +49,7 @@ def run(engine) -> None:
             "house_rules": "TEXT",
             "airbnb_review_url": "VARCHAR",
             "google_review_url": "VARCHAR",
+            "base_nightly_rate": "NUMERIC(10, 2)",
         }
         with engine.begin() as conn:
             for name, ddl_type in new_columns.items():
