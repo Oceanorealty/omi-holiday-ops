@@ -75,3 +75,14 @@ def run(engine) -> None:
                 conn.execute(
                     text("ALTER TABLE transactions ADD COLUMN confirmed_received BOOLEAN DEFAULT FALSE")
                 )
+
+    # Postgres backs SQLAlchemy Enum columns with a real native enum type,
+    # which create_all() never alters once it exists — adding a Python enum
+    # member (like TriggerEvent.guest_re_engagement) needs an explicit
+    # ALTER TYPE here, or every insert using it fails with
+    # "invalid input value for enum". SQLite has no such type, which is why
+    # this only ever breaks in production. Adding a value is safe to run
+    # every startup — IF NOT EXISTS makes it a no-op once applied.
+    if engine.dialect.name == "postgresql" and "message_templates" in existing_tables:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TYPE triggerevent ADD VALUE IF NOT EXISTS 'guest_re_engagement'"))
