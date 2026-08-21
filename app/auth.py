@@ -71,7 +71,12 @@ def verify_session_cookie(cookie_value: str) -> str | None:
             return None
     except ValueError:
         return None
-    return username or "admin"
+    # Pre-multi-user cookies (issued before StaffUser existed) carry no
+    # username segment at all — they can only have come from the shared
+    # ADMIN_USER login, so that's what they map to. A literal "admin"
+    # fallback would silently fail every _is_admin() check whenever the
+    # real ADMIN_USER value isn't literally the string "admin".
+    return username or os.environ.get("ADMIN_USER", "admin")
 
 
 class SessionAuthMiddleware(BaseHTTPMiddleware):
