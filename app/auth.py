@@ -1,7 +1,10 @@
 """
-Session-cookie login gate for the whole app. One shared username/password
-(env vars ADMIN_USER / ADMIN_PASSWORD) — this is an internal team tool, not
-a multi-tenant product, so per-user accounts would be overkill for now.
+Session-cookie login gate for the whole app. Login accepts either the
+shared ADMIN_USER/ADMIN_PASSWORD env-var account (kept for backward
+compatibility) or a named StaffUser row — see main.py's /login route for
+the actual credential check. Whichever one signs in, the session cookie
+carries their username so routes can tell staff apart (e.g. the Staff
+management page checking for the admin role).
 
 Deliberately NOT HTTP Basic Auth: WeChat's in-app browser (and some other
 embedded webviews) doesn't support the native Basic Auth credential prompt,
@@ -12,6 +15,8 @@ If ADMIN_USER/ADMIN_PASSWORD aren't set, auth is skipped entirely (so local
 dev needs no credentials) — but that means production MUST have them
 configured, since there's nothing else gating access.
 """
+
+from __future__ import annotations
 
 import hashlib
 import hmac
@@ -28,9 +33,10 @@ PUBLIC_PATHS = {"/login"}
 # /api/public/ is read-only listing data meant to be fetched directly from
 # the omiholiday.com marketing site — it must stay reachable without a
 # session cookie, since the browser making that request is a site visitor's.
-# /owner/ and /cleaner/ are magic-link portals for people who don't have a
-# staff login at all — the unguessable token in the URL *is* their auth.
-PUBLIC_PREFIXES = ("/static/", "/api/public/", "/owner/", "/cleaner/")
+# /owner/, /cleaner/ and /guest/ are magic-link portals for people who
+# don't have a staff login at all — the unguessable token in the URL *is*
+# their auth.
+PUBLIC_PREFIXES = ("/static/", "/api/public/", "/owner/", "/cleaner/", "/guest/")
 
 
 def _secret() -> str:
@@ -45,22 +51,27 @@ def _sign(value: str) -> str:
     return f"{value}.{mac}"
 
 
-def make_session_cookie() -> str:
-    payload = str(int(time.time()) + SESSION_MAX_AGE)  # expiry timestamp
+def make_session_cookie(username: str = "admin") -> str:
+    expiry = int(time.time()) + SESSION_MAX_AGE
+    payload = f"{expiry}|{username}"
     return _sign(payload)
 
 
-def verify_session_cookie(cookie_value: str) -> bool:
+def verify_session_cookie(cookie_value: str) -> str | None:
+    """Returns the logged-in username, or None if the cookie is missing/invalid/expired."""
     if not cookie_value or "." not in cookie_value:
-        return False
+        return None
     payload, _, mac = cookie_value.rpartition(".")
     expected = _sign(payload)
     if not hmac.compare_digest(expected, cookie_value):
-        return False
+        return None
+    expiry_str, _, username = payload.partition("|")
     try:
-        return int(payload) > time.time()
+        if int(expiry_str) <= time.time():
+            return None
     except ValueError:
-        return False
+        return None
+    return username or "admin"
 
 
 class SessionAuthMiddleware(BaseHTTPMiddleware):
@@ -76,7 +87,9 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         cookie = request.cookies.get(SESSION_COOKIE, "")
-        if verify_session_cookie(cookie):
+        username = verify_session_cookie(cookie)
+        if username:
+            request.state.username = username
             return await call_next(request)
 
         next_url = path if request.method == "GET" else "/"

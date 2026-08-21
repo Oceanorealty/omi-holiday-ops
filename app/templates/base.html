@@ -21,6 +21,7 @@
       <a href="/transactions" class="{{ 'active' if request.url.path == '/transactions' else '' }}">Finance</a>
       <a href="/properties" class="{{ 'active' if request.url.path == '/properties' else '' }}">Properties</a>
       <a href="/templates" class="{{ 'active' if request.url.path == '/templates' else '' }}">Message Templates</a>
+      <a href="/staff" class="{{ 'active' if request.url.path == '/staff' else '' }}">Staff</a>
     </nav>
     <form method="post" action="/logout">
       <button class="logout-btn" type="submit">Sign out</button>

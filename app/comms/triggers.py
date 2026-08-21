@@ -9,6 +9,7 @@ its booking_confirmed email next time `process_due_messages` runs.
 
 from __future__ import annotations
 
+import secrets
 from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
@@ -76,6 +77,9 @@ def process_due_messages(db: Session, today: date | None = None) -> dict:
                 log.status = MessageStatus.skipped_no_smtp
                 summary["skipped_no_smtp"] += 1
             else:
+                if not booking.guest_portal_token:
+                    booking.guest_portal_token = secrets.token_urlsafe(24)
+                    db.flush()
                 subject, body = render(template, booking)
                 try:
                     send_email(guest_email, subject, body)

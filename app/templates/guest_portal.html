@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% if booking %}{{ booking.property.name }} — {% endif %}Your Stay — Omi Holiday</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;1,9..144,400&family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body style="background:var(--cream)">
+  <header class="topbar">
+    <span class="brand"><span class="brand-mark">omi</span><span class="brand-sub">Your Stay</span></span>
+  </header>
+  <main class="container">
+    {% if not booking %}
+    <div class="empty-state"><p>Link not recognized. Please check the URL Omi Holiday sent you.</p></div>
+    {% else %}
+    <div class="page-head"><h1>{{ booking.property.name }}</h1></div>
+    <p class="muted">{{ booking.check_in.strftime('%Y-%m-%d') }} → {{ booking.check_out.strftime('%Y-%m-%d') }}</p>
+
+    {% if booking.door_code %}
+    <section class="card">
+      <h2>Door code</h2>
+      <p style="font-size:28px;font-family:var(--font-display)">{{ booking.door_code }}</p>
+    </section>
+    {% endif %}
+
+    {% if booking.property.check_in_instructions %}
+    <section class="card">
+      <h2>Check-in instructions</h2>
+      <p style="white-space:pre-line">{{ booking.property.check_in_instructions }}</p>
+    </section>
+    {% endif %}
+
+    {% if booking.property.wifi_info %}
+    <section class="card">
+      <h2>WiFi</h2>
+      <p style="white-space:pre-line">{{ booking.property.wifi_info }}</p>
+    </section>
+    {% endif %}
+
+    {% if booking.property.house_rules %}
+    <section class="card">
+      <h2>House rules</h2>
+      <p style="white-space:pre-line">{{ booking.property.house_rules }}</p>
+    </section>
+    {% endif %}
+
+    <section class="card">
+      <h2>Need help?</h2>
+      <p>WhatsApp: <a href="https://wa.me/61420974666">+61 420 974 666</a><br>Email: <a href="mailto:stays@omiholiday.com">stays@omiholiday.com</a></p>
+    </section>
+    {% endif %}
+  </main>
+</body>
+</html>

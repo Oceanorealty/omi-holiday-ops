@@ -44,6 +44,11 @@ def run(engine) -> None:
             "commission_pct": "NUMERIC(5, 2)",
             "owner_portal_token": "VARCHAR",
             "pricing_mode": "VARCHAR DEFAULT 'manual'",
+            "wifi_info": "TEXT",
+            "check_in_instructions": "TEXT",
+            "house_rules": "TEXT",
+            "airbnb_review_url": "VARCHAR",
+            "google_review_url": "VARCHAR",
         }
         with engine.begin() as conn:
             for name, ddl_type in new_columns.items():
@@ -52,9 +57,28 @@ def run(engine) -> None:
 
     if "bookings" in existing_tables:
         columns = {c["name"] for c in inspector.get_columns("bookings")}
-        if "door_code" not in columns:
+        new_columns = {
+            "door_code": "VARCHAR",
+            "guest_portal_token": "VARCHAR",
+        }
+        with engine.begin() as conn:
+            for name, ddl_type in new_columns.items():
+                if name not in columns:
+                    conn.execute(text(f"ALTER TABLE bookings ADD COLUMN {name} {ddl_type}"))
+
+    if "guests" in existing_tables:
+        columns = {c["name"] for c in inspector.get_columns("guests")}
+        if "language" not in columns:
             with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN door_code VARCHAR"))
+                conn.execute(text("ALTER TABLE guests ADD COLUMN language VARCHAR DEFAULT 'en'"))
+
+    if "message_templates" in existing_tables:
+        columns = {c["name"] for c in inspector.get_columns("message_templates")}
+        new_columns = {"subject_zh": "VARCHAR", "body_zh": "TEXT"}
+        with engine.begin() as conn:
+            for name, ddl_type in new_columns.items():
+                if name not in columns:
+                    conn.execute(text(f"ALTER TABLE message_templates ADD COLUMN {name} {ddl_type}"))
 
     if "cleaning_tasks" in existing_tables:
         columns = {c["name"] for c in inspector.get_columns("cleaning_tasks")}

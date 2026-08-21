@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Staff — Omi Holiday{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Staff</h1>
+</div>
+
+{% if denied %}
+<div class="empty-state"><p>Only admin accounts can manage staff logins.</p></div>
+{% else %}
+
+<section class="card">
+  <h2>Add a staff login</h2>
+  <form method="post" action="/staff" class="form-row">
+    <input type="text" name="name" placeholder="Full name" required />
+    <input type="text" name="username" placeholder="Username" required />
+    <input type="password" name="password" placeholder="Password" required />
+    <select name="role">
+      {% for r in roles %}
+      <option value="{{ r.value }}">{{ r.value }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn primary" type="submit">Add staff</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Accounts</h2>
+  <div class="table-wrap">
+  <table class="table small">
+    <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      {% for s in staff %}
+      <tr>
+        <td>{{ s.name }}</td>
+        <td>{{ s.username }}</td>
+        <td>{{ s.role.value }}</td>
+        <td><span class="tag {{ 'tag-ok' if s.active else 'tag-warn' }}">{{ 'active' if s.active else 'disabled' }}</span></td>
+        <td>
+          <form method="post" action="/staff/{{ s.id }}/toggle">
+            <button class="btn tiny" type="submit">{{ 'disable' if s.active else 'enable' }}</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="muted">No named staff accounts yet — the shared admin login still works.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}

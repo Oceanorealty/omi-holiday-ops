@@ -32,8 +32,11 @@ from app.models import (
     OwnerStatement,
     PlatformName,
     Property,
+    StaffRole,
+    StaffUser,
     Transaction,
 )
+from app.security import hash_password, verify_password
 from app.reconcile.importer import ImportError_, parse_csv
 from app.reconcile.matching import suggest_bookings
 from app.reconcile.summary import monthly_summary
@@ -99,14 +102,29 @@ def login_submit(username: str = Form(...), password: str = Form(...), next: str
     admin_user = os.environ.get("ADMIN_USER", "")
     admin_password = os.environ.get("ADMIN_PASSWORD", "")
 
-    user_ok = secrets_module.compare_digest(username, admin_user)
-    pass_ok = secrets_module.compare_digest(password, admin_password)
+    logged_in_as = None
+    if secrets_module.compare_digest(username, admin_user) and secrets_module.compare_digest(
+        password, admin_password
+    ):
+        logged_in_as = username
+    else:
+        db = SessionLocal()
+        try:
+            staff = (
+                db.query(StaffUser)
+                .filter(StaffUser.username == username, StaffUser.active.is_(True))
+                .first()
+            )
+            if staff and verify_password(password, staff.password_hash):
+                logged_in_as = staff.username
+        finally:
+            db.close()
 
-    if user_ok and pass_ok:
+    if logged_in_as:
         response = RedirectResponse(url=next or "/", status_code=303)
         response.set_cookie(
             SESSION_COOKIE,
-            make_session_cookie(),
+            make_session_cookie(logged_in_as),
             max_age=SESSION_MAX_AGE,
             httponly=True,
             samesite="lax",
@@ -204,7 +222,7 @@ def update_door_code(booking_id: int, door_code: str = Form("")):
 
 
 @app.post("/bookings/{booking_id}/guest")
-def update_guest(booking_id: int, name: str = Form(""), email: str = Form("")):
+def update_guest(booking_id: int, name: str = Form(""), email: str = Form(""), language: str = Form("en")):
     db = SessionLocal()
     try:
         booking = db.get(Booking, booking_id)
@@ -214,6 +232,7 @@ def update_guest(booking_id: int, name: str = Form(""), email: str = Form("")):
                 db.add(booking.guest)
             booking.guest.name = name or None
             booking.guest.email = email or None
+            booking.guest.language = language or "en"
             db.commit()
     finally:
         db.close()
@@ -239,6 +258,8 @@ def update_template(
     template_id: int,
     subject: str = Form(...),
     body: str = Form(...),
+    subject_zh: str = Form(""),
+    body_zh: str = Form(""),
     active: str = Form(""),
 ):
     db = SessionLocal()
@@ -247,11 +268,78 @@ def update_template(
         if template:
             template.subject = subject
             template.body = body
+            template.subject_zh = subject_zh or None
+            template.body_zh = body_zh or None
             template.active = bool(active)
             db.commit()
     finally:
         db.close()
     return RedirectResponse(url="/templates", status_code=303)
+
+
+def _is_admin(request: Request, db) -> bool:
+    username = getattr(request.state, "username", None)
+    if not username:
+        return True  # auth gate disabled (local dev) — nothing to restrict
+    if username == os.environ.get("ADMIN_USER"):
+        return True
+    staff = db.query(StaffUser).filter(StaffUser.username == username).first()
+    return bool(staff and staff.role == StaffRole.admin)
+
+
+@app.get("/staff")
+def staff_page(request: Request):
+    db = SessionLocal()
+    try:
+        if not _is_admin(request, db):
+            return templates.TemplateResponse("staff.html", {"request": request, "denied": True, "staff": []})
+        staff = db.query(StaffUser).order_by(StaffUser.name).all()
+        return templates.TemplateResponse(
+            "staff.html", {"request": request, "denied": False, "staff": staff, "roles": list(StaffRole)}
+        )
+    finally:
+        db.close()
+
+
+@app.post("/staff")
+def create_staff(
+    request: Request,
+    name: str = Form(...),
+    username: str = Form(...),
+    password: str = Form(...),
+    role: str = Form("staff"),
+):
+    db = SessionLocal()
+    try:
+        if not _is_admin(request, db):
+            return RedirectResponse(url="/staff", status_code=303)
+        db.add(
+            StaffUser(
+                name=name,
+                username=username,
+                password_hash=hash_password(password),
+                role=StaffRole(role),
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/staff", status_code=303)
+
+
+@app.post("/staff/{staff_id}/toggle")
+def toggle_staff(request: Request, staff_id: int):
+    db = SessionLocal()
+    try:
+        if not _is_admin(request, db):
+            return RedirectResponse(url="/staff", status_code=303)
+        staff = db.get(StaffUser, staff_id)
+        if staff:
+            staff.active = not staff.active
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/staff", status_code=303)
 
 
 @app.get("/api/public/properties")
@@ -385,6 +473,30 @@ def update_property_listing(
             prop.max_guests = int(max_guests) if max_guests.strip().isdigit() else None
             prop.listing_url = listing_url or None
             prop.published = bool(published)
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/properties", status_code=303)
+
+
+@app.post("/properties/{property_id}/guest-info")
+def update_guest_info(
+    property_id: int,
+    wifi_info: str = Form(""),
+    check_in_instructions: str = Form(""),
+    house_rules: str = Form(""),
+    airbnb_review_url: str = Form(""),
+    google_review_url: str = Form(""),
+):
+    db = SessionLocal()
+    try:
+        prop = db.get(Property, property_id)
+        if prop:
+            prop.wifi_info = wifi_info or None
+            prop.check_in_instructions = check_in_instructions or None
+            prop.house_rules = house_rules or None
+            prop.airbnb_review_url = airbnb_review_url or None
+            prop.google_review_url = google_review_url or None
             db.commit()
     finally:
         db.close()
@@ -844,6 +956,18 @@ def finalize_owner_statement(statement_id: int):
     finally:
         db.close()
     return RedirectResponse(url="/transactions", status_code=303)
+
+
+@app.get("/guest/{token}")
+def guest_portal(request: Request, token: str):
+    db = SessionLocal()
+    try:
+        booking = db.query(Booking).filter(Booking.guest_portal_token == token).first()
+        return templates.TemplateResponse(
+            "guest_portal.html", {"request": request, "booking": booking}
+        )
+    finally:
+        db.close()
 
 
 @app.get("/owner/{token}")

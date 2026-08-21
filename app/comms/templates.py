@@ -22,7 +22,8 @@ DEFAULTS = {
         subject="Check-in day at {property_name}",
         body=(
             "Hi {guest_name},\n\n"
-            "Today's the day! Here are your check-in details for {property_name}.\n\n"
+            "Today's the day! Full check-in details, WiFi and house rules for {property_name}: "
+            "{guest_portal_url}\n\n"
             "If anything comes up during your stay, just reply to this email."
         ),
     ),
@@ -31,7 +32,7 @@ DEFAULTS = {
         body=(
             "Hi {guest_name},\n\n"
             "Thanks for staying with us at {property_name}! We hope you had a great time.\n\n"
-            "If you have a minute, we'd really appreciate a review."
+            "If you have a minute, we'd really appreciate a review.{review_links}"
         ),
     ),
     TriggerEvent.guest_re_engagement: dict(
@@ -56,10 +57,36 @@ def seed_default_templates(db) -> None:
 
 
 def render(template: MessageTemplate, booking) -> tuple[str, str]:
+    prop = booking.property
+    review_links = []
+    if prop.airbnb_review_url:
+        review_links.append(f"Airbnb: {prop.airbnb_review_url}")
+    if prop.google_review_url:
+        review_links.append(f"Google: {prop.google_review_url}")
+    review_links_text = ("\n\n" + "\n".join(review_links)) if review_links else ""
+
+    guest_portal_url = (
+        f"https://ops.omiholiday.com/guest/{booking.guest_portal_token}"
+        if booking.guest_portal_token
+        else ""
+    )
+
     ctx = {
         "guest_name": (booking.guest.name if booking.guest and booking.guest.name else "there"),
-        "property_name": booking.property.name,
+        "property_name": prop.name,
         "check_in": booking.check_in.strftime("%Y-%m-%d"),
         "check_out": booking.check_out.strftime("%Y-%m-%d"),
+        "review_links": review_links_text,
+        "guest_portal_url": guest_portal_url,
+        "door_code": booking.door_code or "",
     }
-    return template.subject.format(**ctx), template.body.format(**ctx)
+
+    use_zh = (
+        booking.guest
+        and booking.guest.language == "zh"
+        and template.subject_zh
+        and template.body_zh
+    )
+    subject = template.subject_zh if use_zh else template.subject
+    body = template.body_zh if use_zh else template.body
+    return subject.format(**ctx), body.format(**ctx)

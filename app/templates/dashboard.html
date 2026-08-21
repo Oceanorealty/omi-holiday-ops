@@ -58,7 +58,11 @@
       </td>
       <td>
         <form method="post" action="/bookings/{{ b.id }}/guest" class="inline-form">
-          <input type="email" name="email" placeholder="guest email" value="{{ b.guest.email if b.guest else '' }}" />
+          <input type="email" name="email" placeholder="guest email" value="{{ b.guest.email if b.guest else '' }}" style="width:110px" />
+          <select name="language" style="width:70px">
+            <option value="en" {% if not b.guest or b.guest.language != 'zh' %}selected{% endif %}>EN</option>
+            <option value="zh" {% if b.guest and b.guest.language == 'zh' %}selected{% endif %}>中文</option>
+          </select>
           <input type="hidden" name="name" value="{{ b.guest.name if b.guest else '' }}" />
           <button class="btn tiny" type="submit">save</button>
         </form>

@@ -9,7 +9,9 @@
 <p class="muted" style="margin-bottom:16px">
   Sent automatically: booking confirmed (right away), pre-arrival (3 days before check-in),
   check-in day, and post-checkout (the day after checkout). Use
-  <code>{guest_name}</code>, <code>{property_name}</code>, <code>{check_in}</code>, <code>{check_out}</code> as placeholders.
+  <code>{guest_name}</code>, <code>{property_name}</code>, <code>{check_in}</code>, <code>{check_out}</code>,
+  <code>{guest_portal_url}</code>, <code>{door_code}</code>, <code>{review_links}</code> as placeholders.
+  Chinese versions are used automatically for guests with language set to 中文 (Bookings page).
 </p>
 
 {% for t in message_templates %}
@@ -17,12 +19,20 @@
   <h2>{{ t.trigger_event.value.replace('_', ' ')|title }}</h2>
   <form method="post" action="/templates/{{ t.id }}">
     <div class="field">
-      <label>Subject</label>
+      <label>Subject (English)</label>
       <input type="text" name="subject" value="{{ t.subject }}" required />
     </div>
     <div class="field">
-      <label>Body</label>
+      <label>Body (English)</label>
       <textarea name="body" rows="5" required>{{ t.body }}</textarea>
+    </div>
+    <div class="field">
+      <label>Subject (中文, optional)</label>
+      <input type="text" name="subject_zh" value="{{ t.subject_zh or '' }}" />
+    </div>
+    <div class="field">
+      <label>Body (中文, optional)</label>
+      <textarea name="body_zh" rows="5">{{ t.body_zh or '' }}</textarea>
     </div>
     <label style="font-size:13px; display:flex; align-items:center; gap:6px; margin-bottom:10px">
       <input type="checkbox" name="active" value="1" {{ 'checked' if t.active else '' }} />

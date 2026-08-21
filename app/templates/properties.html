@@ -56,7 +56,28 @@
   <p class="muted">Owner portal: <a href="/owner/{{ p.owner_portal_token }}" target="_blank">/owner/{{ p.owner_portal_token }}</a></p>
   {% endif %}
 
-  <h2 style="margin-top:20px">Website listing</h2>
+  <h2 style="margin-top:20px">Guest info</h2>
+  <p class="muted" style="margin-top:-8px">Shown on each guest's own check-in link (sent automatically on check-in day) and in the review-request email.</p>
+  <form method="post" action="/properties/{{ p.id }}/guest-info" class="form-row" style="align-items:flex-start">
+    <textarea name="check_in_instructions" placeholder="Check-in instructions" style="flex-basis:100%">{{ p.check_in_instructions or '' }}</textarea>
+    <textarea name="wifi_info" placeholder="WiFi network + password" style="flex-basis:48%">{{ p.wifi_info or '' }}</textarea>
+    <textarea name="house_rules" placeholder="House rules" style="flex-basis:48%">{{ p.house_rules or '' }}</textarea>
+    <input type="text" name="airbnb_review_url" placeholder="Airbnb review link" value="{{ p.airbnb_review_url or '' }}" style="flex:1;min-width:200px" />
+    <input type="text" name="google_review_url" placeholder="Google review link" value="{{ p.google_review_url or '' }}" style="flex:1;min-width:200px" />
+    <button class="btn primary" type="submit">Save guest info</button>
+  </form>
+
+  <h2 style="margin-top:20px">Website listing
+    {% set missing = [] %}
+    {% if not p.photo_url %}{% set _ = missing.append('photo') %}{% endif %}
+    {% if not p.description %}{% set _ = missing.append('description') %}{% endif %}
+    {% if not p.bedrooms %}{% set _ = missing.append('beds') %}{% endif %}
+    {% if p.published and missing %}
+    <span class="tag tag-warn" title="Missing: {{ missing|join(', ') }}">incomplete listing</span>
+    {% elif not missing %}
+    <span class="tag tag-ok">complete</span>
+    {% endif %}
+  </h2>
   <form method="post" action="/properties/{{ p.id }}/listing" class="form-row" style="align-items:flex-start">
     <input type="text" name="suburb" placeholder="Suburb (e.g. Broadbeach)" value="{{ p.suburb or '' }}" />
     <input type="text" name="photo_url" placeholder="Photo URL" value="{{ p.photo_url or '' }}" style="flex:1;min-width:220px" />

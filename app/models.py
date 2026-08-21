@@ -52,6 +52,27 @@ class MessageStatus(str, enum.Enum):
     skipped_no_smtp = "skipped_no_smtp"
 
 
+class StaffRole(str, enum.Enum):
+    admin = "admin"  # full access, including managing other staff accounts
+    staff = "staff"  # everything except the Staff management page
+
+
+class StaffUser(Base):
+    """A named login, replacing the single shared ADMIN_USER/ADMIN_PASSWORD
+    account. That env-var login still works as a fallback (see app/auth.py)
+    so this is additive, not a breaking change."""
+
+    __tablename__ = "staff_users"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    username = Column(String, nullable=False, unique=True)
+    password_hash = Column(String, nullable=False)
+    role = Column(Enum(StaffRole), default=StaffRole.staff)
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Property(Base):
     __tablename__ = "properties"
 
@@ -98,6 +119,18 @@ class Property(Base):
     max_guests = Column(Integer, nullable=True)
     listing_url = Column(String, nullable=True)
 
+    # Guest portal content — shown on the guest's own magic-link page
+    # (see Booking.guest_portal_token) so check-in/WiFi/house-rules info
+    # doesn't have to be re-typed into every pre-arrival email by hand.
+    wifi_info = Column(Text, nullable=True)
+    check_in_instructions = Column(Text, nullable=True)
+    house_rules = Column(Text, nullable=True)
+
+    # Real per-platform review links, used in the post-checkout email so
+    # guests land on the actual review form instead of a generic ask.
+    airbnb_review_url = Column(String, nullable=True)
+    google_review_url = Column(String, nullable=True)
+
     ical_feeds = relationship("IcalFeed", back_populates="property", cascade="all, delete-orphan")
     bookings = relationship("Booking", back_populates="property", cascade="all, delete-orphan")
     units = relationship(
@@ -129,6 +162,10 @@ class Guest(Base):
     name = Column(String, nullable=True)
     email = Column(String, nullable=True)
     phone = Column(String, nullable=True)
+    # "en" or "zh" — picks which language a bilingual message template
+    # renders in. Defaults to English since platform iCal feeds don't
+    # report a language, so staff set this by hand when it matters.
+    language = Column(String, nullable=True, default="en")
 
     bookings = relationship("Booking", back_populates="guest")
 
@@ -162,6 +199,11 @@ class Booking(Base):
     # account + API credentials we don't have — this field just gives staff
     # somewhere to record the code by hand in the meantime.
     door_code = Column(String, nullable=True)
+
+    # Magic-link token for this guest's own booking page (check-in info,
+    # door code, WiFi, house rules) — generated lazily the first time it's
+    # needed, same pattern as the owner/cleaner portals.
+    guest_portal_token = Column(String, nullable=True, unique=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -223,6 +265,12 @@ class MessageTemplate(Base):
     trigger_event = Column(Enum(TriggerEvent), unique=True, nullable=False)
     subject = Column(String, nullable=False)
     body = Column(Text, nullable=False)
+    # Optional Chinese versions — used instead of subject/body when the
+    # guest's language is "zh". Omi Holiday's whole brand is bilingual
+    # EN/中文, so this isn't a generic i18n framework, just the two
+    # languages the business actually operates in.
+    subject_zh = Column(String, nullable=True)
+    body_zh = Column(Text, nullable=True)
     active = Column(Boolean, default=True)
 
 
