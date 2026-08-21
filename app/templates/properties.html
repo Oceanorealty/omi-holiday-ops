@@ -12,8 +12,15 @@
     <input type="text" name="name" placeholder="Property name" required />
     <input type="text" name="address" placeholder="Address (optional)" />
     <input type="text" name="default_cleaner" placeholder="Default cleaner (optional)" />
+    <select name="parent_property_id">
+      <option value="">Standalone property</option>
+      {% for parent in properties %}
+      <option value="{{ parent.id }}">Unit under: {{ parent.name }}</option>
+      {% endfor %}
+    </select>
     <button class="btn primary" type="submit">Add property</button>
   </form>
+  <p class="muted" style="margin-top:8px">Use "Unit under" for the hotel model — e.g. "Superior Studio" as a separately-bookable unit inside "OMI Collection Broadbeach".</p>
 </section>
 
 {% for p in properties %}
@@ -22,6 +29,32 @@
     {% if p.published %}<span class="tag tag-ok">live on website</span>{% else %}<span class="tag tag-warn">not published</span>{% endif %}
   </h2>
   {% if p.address %}<p class="muted">{{ p.address }}</p>{% endif %}
+
+  {% set units = all_properties | selectattr('parent_property_id', 'equalto', p.id) | list %}
+  {% if units %}
+  <p class="muted">Units: {% for u in units %}{{ u.name }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+  {% endif %}
+
+  <h2 style="margin-top:20px">Management</h2>
+  <form method="post" action="/properties/{{ p.id }}/settings" class="form-row" style="align-items:flex-start">
+    <input type="text" name="owner_name" placeholder="Owner name" value="{{ p.owner_name or '' }}" />
+    <input type="email" name="owner_email" placeholder="Owner email (enables owner portal)" value="{{ p.owner_email or '' }}" style="flex:1;min-width:200px" />
+    <input type="number" step="0.01" name="commission_pct" placeholder="Commission %" value="{{ p.commission_pct if p.commission_pct is not none else '' }}" style="width:120px" />
+    <select name="pricing_mode">
+      <option value="manual" {% if p.pricing_mode != 'dynamic' %}selected{% endif %}>Manual pricing</option>
+      <option value="dynamic" {% if p.pricing_mode == 'dynamic' %}selected{% endif %}>Dynamic pricing (needs 3rd-party engine)</option>
+    </select>
+    <select name="cleaner_pay_type">
+      <option value="">Cleaner pay type</option>
+      <option value="per_clean" {% if p.cleaner_pay_type == 'per_clean' %}selected{% endif %}>Per clean</option>
+      <option value="hourly" {% if p.cleaner_pay_type == 'hourly' %}selected{% endif %}>Hourly</option>
+    </select>
+    <input type="number" step="0.01" name="cleaner_pay_rate" placeholder="Cleaner rate $" value="{{ p.cleaner_pay_rate if p.cleaner_pay_rate is not none else '' }}" style="width:130px" />
+    <button class="btn primary" type="submit">Save management settings</button>
+  </form>
+  {% if p.owner_portal_token %}
+  <p class="muted">Owner portal: <a href="/owner/{{ p.owner_portal_token }}" target="_blank">/owner/{{ p.owner_portal_token }}</a></p>
+  {% endif %}
 
   <h2 style="margin-top:20px">Website listing</h2>
   <form method="post" action="/properties/{{ p.id }}/listing" class="form-row" style="align-items:flex-start">

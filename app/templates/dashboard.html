@@ -37,6 +37,7 @@
       <th>Check-out</th>
       <th>Amount</th>
       <th>Guest email</th>
+      <th>Door code</th>
       <th>Messages</th>
       <th></th>
     </tr>
@@ -59,6 +60,12 @@
         <form method="post" action="/bookings/{{ b.id }}/guest" class="inline-form">
           <input type="email" name="email" placeholder="guest email" value="{{ b.guest.email if b.guest else '' }}" />
           <input type="hidden" name="name" value="{{ b.guest.name if b.guest else '' }}" />
+          <button class="btn tiny" type="submit">save</button>
+        </form>
+      </td>
+      <td>
+        <form method="post" action="/bookings/{{ b.id }}/door-code" class="inline-form">
+          <input type="text" name="door_code" placeholder="code" value="{{ b.door_code or '' }}" style="width:70px" />
           <button class="btn tiny" type="submit">save</button>
         </form>
       </td>

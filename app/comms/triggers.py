@@ -28,6 +28,8 @@ def _due_events(booking: Booking, today: date) -> list[TriggerEvent]:
         events.append(TriggerEvent.check_in_day)
     if today >= check_out + timedelta(days=1):
         events.append(TriggerEvent.post_checkout)
+    if today >= check_out + timedelta(days=180):
+        events.append(TriggerEvent.guest_re_engagement)
     return events
 
 

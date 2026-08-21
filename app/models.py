@@ -13,7 +13,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import backref, relationship
 
 from app.db import Base
 
@@ -42,6 +42,7 @@ class TriggerEvent(str, enum.Enum):
     pre_arrival = "pre_arrival"
     check_in_day = "check_in_day"
     post_checkout = "post_checkout"
+    guest_re_engagement = "guest_re_engagement"
 
 
 class MessageStatus(str, enum.Enum):
@@ -60,6 +61,31 @@ class Property(Base):
     default_cleaner = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # Hotel-model support: a property can be a sub-unit of a larger listing
+    # (e.g. "OMI Collection Broadbeach" the building, with "Superior Studio",
+    # "Two-Bedroom Sea View" etc as separately-bookable child units). Each
+    # unit still has its own calendar/bookings; occupancy and revenue can
+    # roll up to the parent for reporting.
+    parent_property_id = Column(Integer, ForeignKey("properties.id"), nullable=True)
+
+    # Housekeeping: how this property's default cleaner is paid, so labor
+    # cost can be estimated per task instead of just tracked as a name.
+    cleaner_pay_type = Column(String, nullable=True)  # "per_clean" or "hourly"
+    cleaner_pay_rate = Column(Numeric(10, 2), nullable=True)
+
+    # Owner portal: the property owner's contact + the commission Omi takes,
+    # used to generate owner statements (see OwnerStatement below).
+    owner_name = Column(String, nullable=True)
+    owner_email = Column(String, nullable=True)
+    commission_pct = Column(Numeric(5, 2), nullable=True)  # e.g. 20.00 = 20%
+    owner_portal_token = Column(String, nullable=True, unique=True)
+
+    # Pricing strategy — "manual" (default) means rates are set on each OTA
+    # directly; "dynamic" flags intent to hook up a third-party pricing
+    # engine (e.g. PriceLabs, Beyond) later, which needs its own paid API
+    # account — not something this field alone makes happen.
+    pricing_mode = Column(String, default="manual")
+
     # Public listing fields — surfaced on the omiholiday.com website via
     # /api/public/properties when published=True. Not used anywhere else
     # in the ops tool itself.
@@ -74,6 +100,12 @@ class Property(Base):
 
     ical_feeds = relationship("IcalFeed", back_populates="property", cascade="all, delete-orphan")
     bookings = relationship("Booking", back_populates="property", cascade="all, delete-orphan")
+    units = relationship(
+        "Property",
+        backref=backref("parent", remote_side=[id]),
+        foreign_keys="Property.parent_property_id",
+    )
+    expenses = relationship("Expense", back_populates="property", cascade="all, delete-orphan")
 
 
 class IcalFeed(Base):
@@ -125,6 +157,12 @@ class Booking(Base):
 
     has_conflict = Column(Boolean, default=False)
 
+    # Manual door/lockbox code for this stay. Keynest (or similar) could
+    # auto-generate and sync this via their API, but that needs a Keynest
+    # account + API credentials we don't have — this field just gives staff
+    # somewhere to record the code by hand in the meantime.
+    door_code = Column(String, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -136,17 +174,44 @@ class Booking(Base):
     transactions = relationship("Transaction", back_populates="booking")
 
 
+class Cleaner(Base):
+    """A cleaner staff member. Optional — CleaningTask.assignee (free text)
+    still works standalone for quick ad-hoc assignment; linking a Cleaner
+    record here is what unlocks the cleaner's own portal + pay tracking."""
+
+    __tablename__ = "cleaners"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    phone = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    pay_type = Column(String, nullable=True)  # "per_clean" or "hourly"
+    pay_rate = Column(Numeric(10, 2), nullable=True)
+    portal_token = Column(String, nullable=True, unique=True)
+    active = Column(Boolean, default=True)
+
+    tasks = relationship("CleaningTask", back_populates="cleaner")
+
+
 class CleaningTask(Base):
     __tablename__ = "cleaning_tasks"
 
     id = Column(Integer, primary_key=True)
     booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=False)
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=False)
+    cleaner_id = Column(Integer, ForeignKey("cleaners.id"), nullable=True)
     due_date = Column(DateTime, nullable=False)
     assignee = Column(String, nullable=True)
     status = Column(Enum(CleaningStatus), default=CleaningStatus.pending)
 
+    # Quality check — a supervisor marks the clean as inspected/passed
+    # after the cleaner reports it done.
+    quality_checked = Column(Boolean, default=False)
+    quality_notes = Column(Text, nullable=True)
+
     booking = relationship("Booking", back_populates="cleaning_task")
+    property = relationship("Property")
+    cleaner = relationship("Cleaner", back_populates="tasks")
 
 
 class MessageTemplate(Base):
@@ -193,8 +258,58 @@ class Transaction(Base):
     amount = Column(Numeric(10, 2), nullable=False)
     occurred_at = Column(DateTime, nullable=False)
     matched = Column(Boolean, default=False)
+    # Being matched to a booking just means the amounts line up on paper —
+    # this separately confirms the money has actually arrived in the bank,
+    # since a platform can report a payout before it settles.
+    confirmed_received = Column(Boolean, default=False)
     raw_note = Column(Text, nullable=True)
     imported_at = Column(DateTime, default=datetime.utcnow)
 
     property = relationship("Property")
     booking = relationship("Booking", back_populates="transactions")
+
+
+class Expense(Base):
+    """Ad-hoc maintenance/operating expense logged against a property,
+    entered any time — not tied to a specific booking. Feeds into owner
+    statements and the monthly financial summary."""
+
+    __tablename__ = "expenses"
+
+    id = Column(Integer, primary_key=True)
+    property_id = Column(Integer, ForeignKey("properties.id"), nullable=False)
+    category = Column(String, nullable=True)  # e.g. "maintenance", "supplies", "cleaning"
+    description = Column(String, nullable=False)
+    amount = Column(Numeric(10, 2), nullable=False)
+    occurred_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    property = relationship("Property", back_populates="expenses")
+
+
+class OwnerStatement(Base):
+    """One row per (property, month) — auto-generated from bookings +
+    expenses, with a manual adjustment allowed before it's finalized and
+    sent to the owner."""
+
+    __tablename__ = "owner_statements"
+    __table_args__ = (
+        UniqueConstraint("property_id", "period", name="uq_statement_property_period"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    property_id = Column(Integer, ForeignKey("properties.id"), nullable=False)
+    period = Column(String, nullable=False)  # "YYYY-MM"
+
+    gross_revenue = Column(Numeric(10, 2), nullable=False, default=0)
+    total_expenses = Column(Numeric(10, 2), nullable=False, default=0)
+    commission_amount = Column(Numeric(10, 2), nullable=False, default=0)
+    adjustment_amount = Column(Numeric(10, 2), nullable=False, default=0)
+    adjustment_note = Column(Text, nullable=True)
+    net_payout = Column(Numeric(10, 2), nullable=False, default=0)
+
+    finalized = Column(Boolean, default=False)
+    sent_at = Column(DateTime, nullable=True)
+    generated_at = Column(DateTime, default=datetime.utcnow)
+
+    property = relationship("Property")

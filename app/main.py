@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation
 
 import os
 import secrets as secrets_module
+from calendar import monthrange
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, Form, Request, UploadFile
@@ -13,18 +14,22 @@ from fastapi.templating import Jinja2Templates
 
 from app import migrate
 from app.auth import SESSION_COOKIE, SESSION_MAX_AGE, SessionAuthMiddleware, make_session_cookie
+from app.comms.owner_reports import send_owner_reports
 from app.comms.templates import seed_default_templates
 from app.comms.triggers import process_due_messages
 from app.db import Base, SessionLocal, engine
 from app.models import (
     Booking,
     BookingStatus,
+    Cleaner,
     CleaningStatus,
     CleaningTask,
+    Expense,
     Guest,
     IcalFeed,
     MessageLog,
     MessageTemplate,
+    OwnerStatement,
     PlatformName,
     Property,
     Transaction,
@@ -61,6 +66,7 @@ def _scheduled_sync():
         sync_all(db)
         sync_cleaning_tasks(db)
         process_due_messages(db)
+        send_owner_reports(db)
     finally:
         db.close()
 
@@ -162,6 +168,7 @@ def trigger_sync():
         sync_all(db)
         sync_cleaning_tasks(db)
         process_due_messages(db)
+        send_owner_reports(db)
     finally:
         db.close()
     return RedirectResponse(url="/", status_code=303)
@@ -177,6 +184,19 @@ def update_booking_amount(booking_id: int, amount: str = Form("")):
                 booking.amount = Decimal(amount) if amount.strip() else None
             except InvalidOperation:
                 pass  # leave unchanged on bad input rather than 500
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.post("/bookings/{booking_id}/door-code")
+def update_door_code(booking_id: int, door_code: str = Form("")):
+    db = SessionLocal()
+    try:
+        booking = db.get(Booking, booking_id)
+        if booking:
+            booking.door_code = door_code or None
             db.commit()
     finally:
         db.close()
@@ -265,22 +285,77 @@ def public_properties():
 def properties_page(request: Request):
     db = SessionLocal()
     try:
-        properties = db.query(Property).order_by(Property.name).all()
+        properties = (
+            db.query(Property)
+            .filter(Property.parent_property_id.is_(None))
+            .order_by(Property.name)
+            .all()
+        )
+        all_properties = db.query(Property).order_by(Property.name).all()
         return templates.TemplateResponse(
             "properties.html",
-            {"request": request, "properties": properties, "platforms": list(PlatformName)},
+            {
+                "request": request,
+                "properties": properties,
+                "all_properties": all_properties,
+                "platforms": list(PlatformName),
+            },
         )
     finally:
         db.close()
 
 
 @app.post("/properties")
-def create_property(name: str = Form(...), address: str = Form(""), default_cleaner: str = Form("")):
+def create_property(
+    name: str = Form(...),
+    address: str = Form(""),
+    default_cleaner: str = Form(""),
+    parent_property_id: str = Form(""),
+):
     db = SessionLocal()
     try:
-        prop = Property(name=name, address=address or None, default_cleaner=default_cleaner or None)
+        prop = Property(
+            name=name,
+            address=address or None,
+            default_cleaner=default_cleaner or None,
+            parent_property_id=int(parent_property_id) if parent_property_id else None,
+        )
         db.add(prop)
         db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/properties", status_code=303)
+
+
+@app.post("/properties/{property_id}/settings")
+def update_property_settings(
+    property_id: int,
+    owner_name: str = Form(""),
+    owner_email: str = Form(""),
+    commission_pct: str = Form(""),
+    pricing_mode: str = Form("manual"),
+    cleaner_pay_type: str = Form(""),
+    cleaner_pay_rate: str = Form(""),
+):
+    db = SessionLocal()
+    try:
+        prop = db.get(Property, property_id)
+        if prop:
+            prop.owner_name = owner_name or None
+            prop.owner_email = owner_email or None
+            try:
+                prop.commission_pct = Decimal(commission_pct) if commission_pct.strip() else None
+            except InvalidOperation:
+                pass
+            prop.pricing_mode = pricing_mode or "manual"
+            prop.cleaner_pay_type = cleaner_pay_type or None
+            try:
+                prop.cleaner_pay_rate = Decimal(cleaner_pay_rate) if cleaner_pay_rate.strip() else None
+            except InvalidOperation:
+                pass
+            if prop.owner_email and not prop.owner_portal_token:
+                prop.owner_portal_token = secrets_module.token_urlsafe(24)
+            db.commit()
     finally:
         db.close()
     return RedirectResponse(url="/properties", status_code=303)
@@ -364,27 +439,126 @@ def cleaning_page(request: Request):
             .limit(20)
             .all()
         )
+        cleaners = db.query(Cleaner).filter(Cleaner.active.is_(True)).order_by(Cleaner.name).all()
+
+        # Linen needs: bed count per property, summed by due date, for the
+        # upcoming week — lets staff plan pickup/delivery in one glance
+        # instead of counting checkouts by hand every morning.
+        linen_by_date: dict = {}
+        for t in tasks:
+            beds = (t.property.bedrooms if t.property and t.property.bedrooms else 1)
+            day = t.due_date.date()
+            linen_by_date[day] = linen_by_date.get(day, 0) + beds
+        linen_rows = sorted(linen_by_date.items())
+
         return templates.TemplateResponse(
             "cleaning.html",
-            {"request": request, "tasks": tasks, "done_tasks": done_tasks, "now": datetime.utcnow()},
+            {
+                "request": request,
+                "tasks": tasks,
+                "done_tasks": done_tasks,
+                "now": datetime.utcnow(),
+                "cleaners": cleaners,
+                "linen_rows": linen_rows,
+            },
         )
     finally:
         db.close()
 
 
 @app.post("/cleaning/{task_id}/assign")
-def assign_cleaning_task(task_id: int, assignee: str = Form("")):
+def assign_cleaning_task(task_id: int, assignee: str = Form(""), cleaner_id: str = Form("")):
     db = SessionLocal()
     try:
         task = db.get(CleaningTask, task_id)
         if task:
             task.assignee = assignee or None
+            task.cleaner_id = int(cleaner_id) if cleaner_id else None
             if task.status != CleaningStatus.done:
-                task.status = CleaningStatus.assigned if assignee else CleaningStatus.pending
+                task.status = CleaningStatus.assigned if (assignee or cleaner_id) else CleaningStatus.pending
             db.commit()
     finally:
         db.close()
     return RedirectResponse(url="/cleaning", status_code=303)
+
+
+@app.post("/cleaning/{task_id}/quality-check")
+def toggle_quality_check(task_id: int, quality_notes: str = Form("")):
+    db = SessionLocal()
+    try:
+        task = db.get(CleaningTask, task_id)
+        if task:
+            task.quality_checked = not task.quality_checked
+            task.quality_notes = quality_notes or None
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/cleaning", status_code=303)
+
+
+@app.post("/cleaners")
+def create_cleaner(
+    name: str = Form(...),
+    phone: str = Form(""),
+    email: str = Form(""),
+    pay_type: str = Form(""),
+    pay_rate: str = Form(""),
+):
+    db = SessionLocal()
+    try:
+        cleaner = Cleaner(
+            name=name,
+            phone=phone or None,
+            email=email or None,
+            pay_type=pay_type or None,
+            portal_token=secrets_module.token_urlsafe(24),
+        )
+        try:
+            cleaner.pay_rate = Decimal(pay_rate) if pay_rate.strip() else None
+        except InvalidOperation:
+            pass
+        db.add(cleaner)
+        db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/cleaning", status_code=303)
+
+
+@app.get("/cleaner/{token}")
+def cleaner_portal(request: Request, token: str):
+    db = SessionLocal()
+    try:
+        cleaner = db.query(Cleaner).filter(Cleaner.portal_token == token).first()
+        if not cleaner:
+            return templates.TemplateResponse(
+                "cleaner_portal.html", {"request": request, "cleaner": None, "tasks": []}
+            )
+        tasks = (
+            db.query(CleaningTask)
+            .filter(CleaningTask.cleaner_id == cleaner.id, CleaningTask.status != CleaningStatus.done)
+            .order_by(CleaningTask.due_date)
+            .all()
+        )
+        return templates.TemplateResponse(
+            "cleaner_portal.html",
+            {"request": request, "cleaner": cleaner, "tasks": tasks, "token": token},
+        )
+    finally:
+        db.close()
+
+
+@app.post("/cleaner/{token}/tasks/{task_id}/done")
+def cleaner_portal_complete(token: str, task_id: int):
+    db = SessionLocal()
+    try:
+        cleaner = db.query(Cleaner).filter(Cleaner.portal_token == token).first()
+        task = db.get(CleaningTask, task_id)
+        if cleaner and task and task.cleaner_id == cleaner.id:
+            task.status = CleaningStatus.done
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url=f"/cleaner/{token}", status_code=303)
 
 
 @app.post("/cleaning/{task_id}/done")
@@ -433,6 +607,8 @@ def transactions_page(request: Request, error: str = ""):
         suggestions = {t.id: suggest_bookings(db, t) for t in unmatched}
         properties = db.query(Property).order_by(Property.name).all()
         summary = monthly_summary(db)
+        expenses = db.query(Expense).order_by(Expense.occurred_at.desc()).limit(30).all()
+        statements = db.query(OwnerStatement).order_by(OwnerStatement.period.desc()).limit(30).all()
 
         return templates.TemplateResponse(
             "transactions.html",
@@ -444,6 +620,8 @@ def transactions_page(request: Request, error: str = ""):
                 "properties": properties,
                 "summary": summary,
                 "error": error,
+                "expenses": expenses,
+                "statements": statements,
             },
         )
     finally:
@@ -509,3 +687,195 @@ def unmatch_transaction(transaction_id: int):
     finally:
         db.close()
     return RedirectResponse(url="/transactions", status_code=303)
+
+
+@app.post("/transactions/{transaction_id}/confirm-received")
+def confirm_transaction_received(transaction_id: int):
+    db = SessionLocal()
+    try:
+        transaction = db.get(Transaction, transaction_id)
+        if transaction:
+            transaction.confirmed_received = not transaction.confirmed_received
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/transactions", status_code=303)
+
+
+@app.post("/properties/{property_id}/expenses")
+def create_expense(
+    property_id: int,
+    description: str = Form(...),
+    amount: str = Form(...),
+    category: str = Form(""),
+    occurred_at: str = Form(""),
+):
+    db = SessionLocal()
+    try:
+        try:
+            expense_amount = Decimal(amount)
+        except InvalidOperation:
+            return RedirectResponse(url="/transactions", status_code=303)
+        try:
+            when = datetime.strptime(occurred_at, "%Y-%m-%d") if occurred_at else datetime.utcnow()
+        except ValueError:
+            when = datetime.utcnow()
+        db.add(
+            Expense(
+                property_id=property_id,
+                description=description,
+                amount=expense_amount,
+                category=category or None,
+                occurred_at=when,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/transactions", status_code=303)
+
+
+@app.post("/expenses/{expense_id}/delete")
+def delete_expense(expense_id: int):
+    db = SessionLocal()
+    try:
+        expense = db.get(Expense, expense_id)
+        if expense:
+            db.delete(expense)
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/transactions", status_code=303)
+
+
+@app.post("/properties/{property_id}/statements/generate")
+def generate_owner_statement(property_id: int, period: str = Form(...)):
+    """period is 'YYYY-MM'. Recomputes gross/expenses/commission from actual
+    data every time it's called (until finalized), so re-generating just
+    refreshes the numbers rather than creating duplicates."""
+    db = SessionLocal()
+    try:
+        prop = db.get(Property, property_id)
+        if not prop:
+            return RedirectResponse(url="/transactions", status_code=303)
+
+        year, month = (int(x) for x in period.split("-"))
+        start = datetime(year, month, 1)
+        last_day = monthrange(year, month)[1]
+        end = datetime(year, month, last_day, 23, 59, 59)
+
+        gross = (
+            db.query(Booking)
+            .filter(
+                Booking.property_id == property_id,
+                Booking.status == BookingStatus.confirmed,
+                Booking.check_out >= start,
+                Booking.check_out <= end,
+            )
+            .all()
+        )
+        gross_revenue = sum((b.amount or Decimal("0")) for b in gross)
+
+        expenses = (
+            db.query(Expense)
+            .filter(Expense.property_id == property_id, Expense.occurred_at >= start, Expense.occurred_at <= end)
+            .all()
+        )
+        total_expenses = sum((e.amount for e in expenses), Decimal("0"))
+
+        commission_pct = prop.commission_pct or Decimal("0")
+        commission_amount = (gross_revenue * commission_pct / Decimal("100")).quantize(Decimal("0.01"))
+
+        statement = (
+            db.query(OwnerStatement)
+            .filter(OwnerStatement.property_id == property_id, OwnerStatement.period == period)
+            .first()
+        )
+        if statement and statement.finalized:
+            return RedirectResponse(url="/transactions", status_code=303)
+        if not statement:
+            statement = OwnerStatement(property_id=property_id, period=period, adjustment_amount=Decimal("0"))
+            db.add(statement)
+
+        statement.gross_revenue = gross_revenue
+        statement.total_expenses = total_expenses
+        statement.commission_amount = commission_amount
+        statement.net_payout = (
+            gross_revenue - total_expenses - commission_amount + statement.adjustment_amount
+        )
+        statement.generated_at = datetime.utcnow()
+        db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/transactions", status_code=303)
+
+
+@app.post("/statements/{statement_id}/adjust")
+def adjust_owner_statement(statement_id: int, adjustment_amount: str = Form("0"), adjustment_note: str = Form("")):
+    db = SessionLocal()
+    try:
+        statement = db.get(OwnerStatement, statement_id)
+        if statement and not statement.finalized:
+            try:
+                statement.adjustment_amount = Decimal(adjustment_amount) if adjustment_amount.strip() else Decimal("0")
+            except InvalidOperation:
+                pass
+            statement.adjustment_note = adjustment_note or None
+            statement.net_payout = (
+                statement.gross_revenue
+                - statement.total_expenses
+                - statement.commission_amount
+                + statement.adjustment_amount
+            )
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/transactions", status_code=303)
+
+
+@app.post("/statements/{statement_id}/finalize")
+def finalize_owner_statement(statement_id: int):
+    db = SessionLocal()
+    try:
+        statement = db.get(OwnerStatement, statement_id)
+        if statement:
+            statement.finalized = not statement.finalized
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/transactions", status_code=303)
+
+
+@app.get("/owner/{token}")
+def owner_portal(request: Request, token: str):
+    db = SessionLocal()
+    try:
+        prop = db.query(Property).filter(Property.owner_portal_token == token).first()
+        if not prop:
+            return templates.TemplateResponse(
+                "owner_portal.html", {"request": request, "property": None}
+            )
+        statements = (
+            db.query(OwnerStatement)
+            .filter(OwnerStatement.property_id == prop.id)
+            .order_by(OwnerStatement.period.desc())
+            .limit(12)
+            .all()
+        )
+        upcoming = (
+            db.query(Booking)
+            .filter(
+                Booking.property_id == prop.id,
+                Booking.status == BookingStatus.confirmed,
+                Booking.check_out >= datetime.utcnow(),
+            )
+            .order_by(Booking.check_in)
+            .limit(10)
+            .all()
+        )
+        return templates.TemplateResponse(
+            "owner_portal.html",
+            {"request": request, "property": prop, "statements": statements, "upcoming": upcoming},
+        )
+    finally:
+        db.close()

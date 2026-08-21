@@ -36,8 +36,42 @@ def run(engine) -> None:
             "bathrooms": "INTEGER",
             "max_guests": "INTEGER",
             "listing_url": "VARCHAR",
+            "parent_property_id": "INTEGER",
+            "cleaner_pay_type": "VARCHAR",
+            "cleaner_pay_rate": "NUMERIC(10, 2)",
+            "owner_name": "VARCHAR",
+            "owner_email": "VARCHAR",
+            "commission_pct": "NUMERIC(5, 2)",
+            "owner_portal_token": "VARCHAR",
+            "pricing_mode": "VARCHAR DEFAULT 'manual'",
         }
         with engine.begin() as conn:
             for name, ddl_type in new_columns.items():
                 if name not in columns:
                     conn.execute(text(f"ALTER TABLE properties ADD COLUMN {name} {ddl_type}"))
+
+    if "bookings" in existing_tables:
+        columns = {c["name"] for c in inspector.get_columns("bookings")}
+        if "door_code" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN door_code VARCHAR"))
+
+    if "cleaning_tasks" in existing_tables:
+        columns = {c["name"] for c in inspector.get_columns("cleaning_tasks")}
+        new_columns = {
+            "cleaner_id": "INTEGER",
+            "quality_checked": "BOOLEAN DEFAULT FALSE",
+            "quality_notes": "TEXT",
+        }
+        with engine.begin() as conn:
+            for name, ddl_type in new_columns.items():
+                if name not in columns:
+                    conn.execute(text(f"ALTER TABLE cleaning_tasks ADD COLUMN {name} {ddl_type}"))
+
+    if "transactions" in existing_tables:
+        columns = {c["name"] for c in inspector.get_columns("transactions")}
+        if "confirmed_received" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE transactions ADD COLUMN confirmed_received BOOLEAN DEFAULT FALSE")
+                )

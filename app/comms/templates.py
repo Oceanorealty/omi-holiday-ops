@@ -34,6 +34,16 @@ DEFAULTS = {
             "If you have a minute, we'd really appreciate a review."
         ),
     ),
+    TriggerEvent.guest_re_engagement: dict(
+        subject="Come back and stay with us again, {guest_name}",
+        body=(
+            "Hi {guest_name},\n\n"
+            "It's been a while since your stay at {property_name} — we'd love to host you again! "
+            "Book direct with us for the best rate.\n\n"
+            "Hope to see you back on the Gold Coast soon."
+        ),
+        active=False,
+    ),
 }
 
 

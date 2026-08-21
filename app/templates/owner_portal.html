@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% if property %}{{ property.name }} — {% endif %}Owner Portal — Omi Holiday</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;1,9..144,400&family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body style="background:var(--cream)">
+  <header class="topbar">
+    <span class="brand"><span class="brand-mark">omi</span><span class="brand-sub">Owner Portal</span></span>
+  </header>
+  <main class="container">
+    {% if not property %}
+    <div class="empty-state"><p>Link not recognized. Please check the URL Omi Holiday sent you.</p></div>
+    {% else %}
+    <div class="page-head"><h1>{{ property.name }}</h1></div>
+
+    <section class="card">
+      <h2>Statements</h2>
+      {% if statements %}
+      <div class="table-wrap">
+      <table class="table small">
+        <thead><tr><th>Period</th><th>Gross</th><th>Expenses</th><th>Commission</th><th>Net payout</th></tr></thead>
+        <tbody>
+          {% for s in statements %}
+          <tr>
+            <td>{{ s.period }}</td>
+            <td>${{ s.gross_revenue }}</td>
+            <td>-${{ s.total_expenses }}</td>
+            <td>-${{ s.commission_amount }}</td>
+            <td><strong>${{ s.net_payout }}</strong></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% else %}
+      <p class="muted">No statements yet.</p>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Upcoming bookings</h2>
+      {% if upcoming %}
+      <div class="table-wrap">
+      <table class="table small">
+        <thead><tr><th>Check-in</th><th>Check-out</th><th>Platform</th></tr></thead>
+        <tbody>
+          {% for b in upcoming %}
+          <tr>
+            <td>{{ b.check_in.strftime('%Y-%m-%d') }}</td>
+            <td>{{ b.check_out.strftime('%Y-%m-%d') }}</td>
+            <td><span class="pill pill-{{ b.platform.value }}">{{ b.platform.value.replace('_', '.') }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% else %}
+      <p class="muted">No upcoming bookings.</p>
+      {% endif %}
+    </section>
+    {% endif %}
+  </main>
+</body>
+</html>

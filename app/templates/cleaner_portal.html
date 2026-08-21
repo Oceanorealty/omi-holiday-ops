@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% if cleaner %}{{ cleaner.name }} — {% endif %}Cleaner Portal — Omi Holiday</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;1,9..144,400&family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body style="background:var(--cream)">
+  <header class="topbar">
+    <span class="brand"><span class="brand-mark">omi</span><span class="brand-sub">Cleaner Portal</span></span>
+  </header>
+  <main class="container">
+    {% if not cleaner %}
+    <div class="empty-state"><p>Link not recognized. Please check the URL your manager sent you.</p></div>
+    {% else %}
+    <div class="page-head"><h1>Hi {{ cleaner.name }}</h1></div>
+    {% if tasks|length == 0 %}
+    <div class="empty-state"><p>No cleaning tasks assigned to you right now.</p></div>
+    {% else %}
+    <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Property</th><th>Due</th><th></th></tr></thead>
+      <tbody>
+        {% for t in tasks %}
+        <tr>
+          <td>{{ t.property.name if t.property else t.booking.property.name }}</td>
+          <td>{{ t.due_date.strftime('%Y-%m-%d') }}</td>
+          <td>
+            <form method="post" action="/cleaner/{{ token }}/tasks/{{ t.id }}/done">
+              <button class="btn primary tiny" type="submit">Mark done</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+    {% endif %}
+  </main>
+</body>
+</html>

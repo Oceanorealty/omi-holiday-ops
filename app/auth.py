@@ -28,7 +28,9 @@ PUBLIC_PATHS = {"/login"}
 # /api/public/ is read-only listing data meant to be fetched directly from
 # the omiholiday.com marketing site — it must stay reachable without a
 # session cookie, since the browser making that request is a site visitor's.
-PUBLIC_PREFIXES = ("/static/", "/api/public/")
+# /owner/ and /cleaner/ are magic-link portals for people who don't have a
+# staff login at all — the unguessable token in the URL *is* their auth.
+PUBLIC_PREFIXES = ("/static/", "/api/public/", "/owner/", "/cleaner/")
 
 
 def _secret() -> str:

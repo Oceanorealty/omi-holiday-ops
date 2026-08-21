@@ -9,6 +9,54 @@
   </form>
 </div>
 
+<section class="card">
+  <h2>Cleaners</h2>
+  <div class="table-wrap">
+  <table class="table small">
+    <thead><tr><th>Name</th><th>Pay</th><th>Portal link</th></tr></thead>
+    <tbody>
+      {% for c in cleaners %}
+      <tr>
+        <td>{{ c.name }}</td>
+        <td>{{ c.pay_type or '—' }}{% if c.pay_rate is not none %} · ${{ c.pay_rate }}{% endif %}</td>
+        <td><a href="/cleaner/{{ c.portal_token }}" target="_blank">/cleaner/{{ c.portal_token }}</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="muted">No cleaners added yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <form method="post" action="/cleaners" class="form-row" style="margin-top:12px">
+    <input type="text" name="name" placeholder="Cleaner name" required />
+    <input type="text" name="phone" placeholder="Phone (optional)" />
+    <select name="pay_type">
+      <option value="">Pay type</option>
+      <option value="per_clean">Per clean</option>
+      <option value="hourly">Hourly</option>
+    </select>
+    <input type="number" step="0.01" name="pay_rate" placeholder="Rate $" style="width:110px" />
+    <button class="btn" type="submit">Add cleaner</button>
+  </form>
+</section>
+
+{% if linen_rows %}
+<section class="card">
+  <h2>Linen needed (upcoming)</h2>
+  <div class="table-wrap">
+  <table class="table small">
+    <thead><tr><th>Date</th><th>Sets needed</th></tr></thead>
+    <tbody>
+      {% for day, count in linen_rows %}
+      <tr><td>{{ day.strftime('%Y-%m-%d') }}</td><td>{{ count }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted">Estimated from each property's bedroom count on checkout day.</p>
+</section>
+{% endif %}
+
 {% if tasks|length == 0 %}
 <div class="empty-state">
   <p>No cleaning tasks due. They're created automatically from checkout dates when bookings sync.</p>
@@ -23,6 +71,7 @@
       <th>Guest</th>
       <th>Assignee</th>
       <th>Status</th>
+      <th>Quality</th>
       <th></th>
     </tr>
   </thead>
@@ -37,11 +86,22 @@
       <td>{{ t.booking.guest.name if t.booking.guest and t.booking.guest.name else (t.booking.summary or '—') }}</td>
       <td>
         <form method="post" action="/cleaning/{{ t.id }}/assign" class="inline-form">
-          <input type="text" name="assignee" placeholder="assignee" value="{{ t.assignee or '' }}" />
+          <select name="cleaner_id" style="width:120px">
+            <option value="">— free text —</option>
+            {% for c in cleaners %}
+            <option value="{{ c.id }}" {% if t.cleaner_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+            {% endfor %}
+          </select>
+          <input type="text" name="assignee" placeholder="or type a name" value="{{ t.assignee or '' }}" style="width:100px" />
           <button class="btn tiny" type="submit">save</button>
         </form>
       </td>
       <td><span class="tag {{ 'tag-ok' if t.status.value == 'assigned' else 'tag-warn' }}">{{ t.status.value }}</span></td>
+      <td>
+        <form method="post" action="/cleaning/{{ t.id }}/quality-check">
+          <button class="btn tiny {{ 'primary' if t.quality_checked }}" type="submit">{{ '✓ checked' if t.quality_checked else 'mark checked' }}</button>
+        </form>
+      </td>
       <td>
         <form method="post" action="/cleaning/{{ t.id }}/done">
           <button class="btn tiny" type="submit">mark done</button>
