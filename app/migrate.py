@@ -50,6 +50,7 @@ def run(engine) -> None:
             "airbnb_review_url": "VARCHAR",
             "google_review_url": "VARCHAR",
             "base_nightly_rate": "NUMERIC(10, 2)",
+            "ical_export_token": "VARCHAR",
         }
         with engine.begin() as conn:
             for name, ddl_type in new_columns.items():
@@ -61,6 +62,7 @@ def run(engine) -> None:
         new_columns = {
             "door_code": "VARCHAR",
             "guest_portal_token": "VARCHAR",
+            "is_block": "BOOLEAN DEFAULT FALSE",
         }
         with engine.begin() as conn:
             for name, ddl_type in new_columns.items():

@@ -101,6 +101,12 @@ class Property(Base):
     commission_pct = Column(Numeric(5, 2), nullable=True)  # e.g. 20.00 = 20%
     owner_portal_token = Column(String, nullable=True, unique=True)
 
+    # Outbound combined-availability feed (bookings + manual blocks) —
+    # pasted into another platform's "import calendar" field so double-
+    # bookings are prevented there, not just flagged here after the fact.
+    # See app/sync/ical_export.py.
+    ical_export_token = Column(String, nullable=True, unique=True)
+
     # Pricing strategy — "manual" (default) means rates are set on each OTA
     # directly; "dynamic" uses the rule-based engine below (see PriceRule)
     # to suggest a nightly rate from base_nightly_rate. This is a self-
@@ -195,6 +201,14 @@ class Booking(Base):
     amount = Column(Numeric(10, 2), nullable=True)
 
     has_conflict = Column(Boolean, default=False)
+
+    # A manually-created hold (owner use, maintenance) rather than a real
+    # guest stay — created directly in the app, not synced from a platform.
+    # Participates in the same overlap-conflict check as real bookings, but
+    # is excluded from the guest-facing bookings table, cleaning-task
+    # generation, and guest messaging (see dashboard(), sync_cleaning_tasks(),
+    # process_due_messages()).
+    is_block = Column(Boolean, default=False)
 
     # Manual door/lockbox code for this stay. Keynest (or similar) could
     # auto-generate and sync this via their API, but that needs a Keynest

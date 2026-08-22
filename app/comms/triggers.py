@@ -55,7 +55,12 @@ def _get_or_create_log(db: Session, booking_id: int, event: TriggerEvent) -> Mes
 def process_due_messages(db: Session, today: date | None = None) -> dict:
     today = today or date.today()
     templates = {t.trigger_event: t for t in db.query(MessageTemplate).filter_by(active=True).all()}
-    bookings = db.query(Booking).filter(Booking.status == BookingStatus.confirmed).all()
+    # Manual blocks have no guest, so nothing here is ever due for one.
+    bookings = (
+        db.query(Booking)
+        .filter(Booking.status == BookingStatus.confirmed, Booking.is_block.is_(False))
+        .all()
+    )
 
     summary = {"sent": 0, "failed": 0, "skipped_no_email": 0, "skipped_no_smtp": 0}
 

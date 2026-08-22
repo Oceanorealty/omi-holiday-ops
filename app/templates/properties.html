@@ -130,6 +130,42 @@
     <input type="text" name="url" placeholder="iCal feed URL" required style="flex:1" />
     <button class="btn" type="submit">Add feed</button>
   </form>
+
+  <h2 style="margin-top:20px">Availability export</h2>
+  <p class="muted" style="margin-top:-8px">Paste this URL into other platforms' "import calendar" field so bookings and blocks recorded here also block dates there.</p>
+  {% if p.ical_export_token %}
+  <p class="muted"><a href="/ical/{{ p.id }}/{{ p.ical_export_token }}.ics" target="_blank">/ical/{{ p.id }}/{{ p.ical_export_token }}.ics</a></p>
+  {% endif %}
+
+  {% set blocks = p.bookings | selectattr('is_block', 'equalto', true) | selectattr('status.value', 'equalto', 'confirmed') | sort(attribute='check_in') | list %}
+  {% if blocks %}
+  <div class="table-wrap">
+  <table class="table small">
+    <thead><tr><th>From</th><th>To</th><th>Note</th><th></th></tr></thead>
+    <tbody>
+      {% for block in blocks %}
+      <tr class="{{ 'conflict' if block.has_conflict else '' }}">
+        <td>{{ block.check_in.strftime('%Y-%m-%d') }}</td>
+        <td>{{ block.check_out.strftime('%Y-%m-%d') }}</td>
+        <td>{{ block.summary or '—' }}</td>
+        <td>
+          <form method="post" action="/blocks/{{ block.id }}/delete">
+            <button class="btn tiny" type="submit">remove</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+
+  <form method="post" action="/properties/{{ p.id }}/blocks" class="form-row">
+    <input type="date" name="start_date" required />
+    <input type="date" name="end_date" required />
+    <input type="text" name="note" placeholder="Note (e.g. owner use, maintenance)" style="flex:1" />
+    <button class="btn" type="submit">Block dates</button>
+  </form>
 </section>
 {% endfor %}
 

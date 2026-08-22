@@ -3,12 +3,13 @@ from decimal import Decimal, InvalidOperation
 
 import os
 import secrets as secrets_module
+import uuid
 from calendar import monthrange
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, Form, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -44,6 +45,7 @@ from app.reconcile.importer import ImportError_, parse_csv
 from app.reconcile.matching import suggest_bookings
 from app.reconcile.summary import monthly_summary
 from app.sync.cleaning import sync_cleaning_tasks
+from app.sync.ical_export import build_ics
 from app.sync.ical_sync import recompute_conflicts, sync_all, sync_feed
 
 migrate.run(engine)
@@ -150,11 +152,17 @@ def dashboard(request: Request):
     try:
         bookings = (
             db.query(Booking)
-            .filter(Booking.status == BookingStatus.confirmed)
+            .filter(Booking.status == BookingStatus.confirmed, Booking.is_block.is_(False))
             .order_by(Booking.check_in)
             .all()
         )
-        conflicts = [b for b in bookings if b.has_conflict]
+        # Conflicts still count blocks (a real booking overlapping a manual
+        # block is exactly the double-booking this table should warn about)
+        # even though blocks themselves aren't listed as a row here.
+        all_confirmed = (
+            db.query(Booking).filter(Booking.status == BookingStatus.confirmed).all()
+        )
+        conflicts = [b for b in all_confirmed if b.has_conflict]
         properties = db.query(Property).order_by(Property.name).all()
 
         logs_by_booking: dict[int, list] = {}
@@ -525,6 +533,16 @@ def properties_page(request: Request):
             .order_by(Property.name)
             .all()
         )
+        # Lazily backfill the outbound export token, same pattern as
+        # owner_portal_token — existing properties get one on first visit
+        # here rather than needing a migration to fill it in.
+        changed = False
+        for prop in properties:
+            if not prop.ical_export_token:
+                prop.ical_export_token = secrets_module.token_urlsafe(24)
+                changed = True
+        if changed:
+            db.commit()
         all_properties = db.query(Property).order_by(Property.name).all()
         return templates.TemplateResponse(
             "properties.html",
@@ -678,6 +696,55 @@ def delete_feed(feed_id: int):
     finally:
         db.close()
     return RedirectResponse(url="/properties", status_code=303)
+
+
+@app.post("/properties/{property_id}/blocks")
+def create_block(property_id: int, start_date: str = Form(...), end_date: str = Form(...), note: str = Form("")):
+    db = SessionLocal()
+    try:
+        block = Booking(
+            property_id=property_id,
+            platform=PlatformName.other,
+            uid=f"block-{uuid.uuid4()}",
+            summary=note or "Blocked",
+            check_in=datetime.strptime(start_date, "%Y-%m-%d"),
+            check_out=datetime.strptime(end_date, "%Y-%m-%d"),
+            status=BookingStatus.confirmed,
+            is_block=True,
+        )
+        db.add(block)
+        db.commit()
+        recompute_conflicts(db)
+    finally:
+        db.close()
+    return RedirectResponse(url="/properties", status_code=303)
+
+
+@app.post("/blocks/{booking_id}/delete")
+def delete_block(booking_id: int):
+    db = SessionLocal()
+    try:
+        booking = db.get(Booking, booking_id)
+        if booking and booking.is_block:
+            db.delete(booking)
+            db.commit()
+            recompute_conflicts(db)
+    finally:
+        db.close()
+    return RedirectResponse(url="/properties", status_code=303)
+
+
+@app.get("/ical/{property_id}/{token}.ics")
+def property_ical_export(property_id: int, token: str):
+    db = SessionLocal()
+    try:
+        prop = db.get(Property, property_id)
+        if not prop or not prop.ical_export_token or prop.ical_export_token != token:
+            return Response(status_code=404)
+        bookings = db.query(Booking).filter(Booking.property_id == property_id).all()
+        return Response(content=build_ics(bookings), media_type="text/calendar")
+    finally:
+        db.close()
 
 
 @app.get("/cleaning")

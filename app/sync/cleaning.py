@@ -10,7 +10,9 @@ from app.models import Booking, BookingStatus, CleaningStatus, CleaningTask
 
 
 def sync_cleaning_tasks(db: Session) -> None:
-    bookings = db.query(Booking).all()
+    # Manual blocks (owner use, maintenance) don't need a cleaning task
+    # auto-created — there's no guest checkout driving one.
+    bookings = db.query(Booking).filter(Booking.is_block.is_(False)).all()
 
     for booking in bookings:
         task = booking.cleaning_task

@@ -35,8 +35,10 @@ PUBLIC_PATHS = {"/login"}
 # session cookie, since the browser making that request is a site visitor's.
 # /owner/, /cleaner/ and /guest/ are magic-link portals for people who
 # don't have a staff login at all — the unguessable token in the URL *is*
-# their auth.
-PUBLIC_PREFIXES = ("/static/", "/api/public/", "/owner/", "/cleaner/", "/guest/")
+# their auth. /ical/ is the outbound availability feed — other platforms
+# (Airbnb etc.) fetch it directly, with no session cookie of their own;
+# same unguessable-token-as-auth pattern.
+PUBLIC_PREFIXES = ("/static/", "/api/public/", "/owner/", "/cleaner/", "/guest/", "/ical/")
 
 
 def _secret() -> str:

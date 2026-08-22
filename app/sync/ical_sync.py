@@ -85,9 +85,12 @@ def sync_feed(db: Session, feed: IcalFeed) -> dict:
 
     # Anything previously synced from this feed but no longer present upstream
     # was cancelled or removed — mark it rather than deleting, so history is kept.
+    # Excludes manual blocks: they share a platform value with real feeds
+    # (see main.py's create_block) but were never part of any feed's synced
+    # UIDs, so they'd otherwise get wrongly cancelled on the first sync.
     stale = (
         db.query(Booking)
-        .filter_by(property_id=feed.property_id, platform=feed.platform)
+        .filter_by(property_id=feed.property_id, platform=feed.platform, is_block=False)
         .filter(~Booking.uid.in_(seen_uids) if seen_uids else True)
         .all()
     )
