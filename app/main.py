@@ -496,6 +496,21 @@ def toggle_staff(request: Request, staff_id: int):
     return RedirectResponse(url="/staff", status_code=303)
 
 
+@app.post("/staff/{staff_id}/delete")
+def delete_staff(request: Request, staff_id: int):
+    db = SessionLocal()
+    try:
+        if not _is_admin(request, db):
+            return RedirectResponse(url="/staff", status_code=303)
+        staff = db.get(StaffUser, staff_id)
+        if staff and staff.username != getattr(request.state, "username", None):
+            db.delete(staff)
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url="/staff", status_code=303)
+
+
 @app.get("/api/public/properties")
 def public_properties():
     db = SessionLocal()

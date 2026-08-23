@@ -38,8 +38,11 @@
         <td>{{ s.role.value }}</td>
         <td><span class="tag {{ 'tag-ok' if s.active else 'tag-warn' }}">{{ 'active' if s.active else 'disabled' }}</span></td>
         <td>
-          <form method="post" action="/staff/{{ s.id }}/toggle">
+          <form method="post" action="/staff/{{ s.id }}/toggle" style="display:inline">
             <button class="btn tiny" type="submit">{{ 'disable' if s.active else 'enable' }}</button>
+          </form>
+          <form method="post" action="/staff/{{ s.id }}/delete" style="display:inline">
+            <button class="btn tiny" type="submit">delete</button>
           </form>
         </td>
       </tr>

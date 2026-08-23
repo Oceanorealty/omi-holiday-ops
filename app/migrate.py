@@ -113,3 +113,8 @@ def run(engine) -> None:
     if engine.dialect.name == "postgresql" and "message_templates" in existing_tables:
         with engine.begin() as conn:
             conn.execute(text("ALTER TYPE triggerevent ADD VALUE IF NOT EXISTS 'guest_re_engagement'"))
+
+    if engine.dialect.name == "postgresql" and "staff_users" in existing_tables:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TYPE staffrole ADD VALUE IF NOT EXISTS 'manager'"))
+            conn.execute(text("ALTER TYPE staffrole ADD VALUE IF NOT EXISTS 'cleaner'"))

@@ -54,7 +54,9 @@ class MessageStatus(str, enum.Enum):
 
 class StaffRole(str, enum.Enum):
     admin = "admin"  # full access, including managing other staff accounts
+    manager = "manager"  # same access as staff; distinguishes seniority in the UI
     staff = "staff"  # everything except the Staff management page
+    cleaner = "cleaner"  # same access as staff; distinguishes housekeeping logins in the UI
 
 
 class StaffUser(Base):
