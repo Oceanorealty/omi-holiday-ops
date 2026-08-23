@@ -1,5 +1,5 @@
 :root {
-  --navy: #0d0c1f;
+  --navy: #14122a;
   --charcoal: #3a3630;
   --cream: #f7f4ee;
   --cream-deep: #efe9dc;
@@ -36,17 +36,15 @@ body {
 }
 .brand {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   text-decoration: none;
 }
 .brand-mark {
-  font-family: var(--font-display);
-  font-style: italic;
-  font-weight: 500;
-  font-size: 22px;
-  color: var(--white);
-  letter-spacing: 0.5px;
+  height: 24px;
+  width: auto;
+  display: block;
 }
 .brand-sub {
   font-size: 11px;
@@ -83,7 +81,7 @@ nav a {
   transition: color 0.15s, background 0.15s;
 }
 nav a:hover { color: var(--white); background: rgba(255, 255, 255, 0.06); }
-nav a.active { color: var(--navy); background: var(--gold); }
+nav a.active { color: var(--gold); background: rgba(201, 168, 106, 0.12); }
 
 .container { max-width: 1080px; margin: 0 auto; padding: 40px 32px; }
 
