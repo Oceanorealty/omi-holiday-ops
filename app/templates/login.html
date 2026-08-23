@@ -15,7 +15,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      background: #0d0c1f;
+      background: #14122a;
       font-family: "Jost", -apple-system, sans-serif;
     }
     .login-card {
@@ -25,12 +25,10 @@
       text-align: center;
     }
     .brand-mark {
-      font-family: "Fraunces", serif;
-      font-style: italic;
-      font-weight: 500;
-      font-size: 34px;
-      color: #ffffff;
+      height: 40px;
+      width: auto;
       display: block;
+      margin: 0 auto;
     }
     .brand-sub {
       font-size: 11px;
@@ -80,7 +78,7 @@
 </head>
 <body>
   <div class="login-card">
-    <span class="brand-mark">omi</span>
+    <img class="brand-mark" src="/static/omi-mark.png" alt="Omi" />
     <span class="brand-sub">Operations</span>
 
     {% if error %}

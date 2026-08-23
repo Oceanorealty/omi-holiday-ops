@@ -83,6 +83,41 @@ nav a {
 nav a:hover { color: var(--white); background: rgba(255, 255, 255, 0.06); }
 nav a.active { color: var(--gold); background: rgba(201, 168, 106, 0.12); }
 
+.nav-toggle { display: none; }
+.nav-toggle-btn {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  order: 2;
+}
+.nav-toggle-btn span { display: block; height: 2px; background: var(--white); border-radius: 1px; }
+
+@media (max-width: 860px) {
+  .topbar { flex-wrap: wrap; padding: 14px 20px; }
+  .brand { order: 1; }
+  .nav-toggle-btn { display: flex; }
+  .topbar > form { order: 3; margin: 0; }
+  nav {
+    order: 4;
+    width: 100%;
+    flex: none;
+    display: none;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 2px;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .nav-toggle:checked ~ nav { display: flex; }
+  nav a { text-align: left; padding: 12px 14px; }
+  .container { padding: 24px 20px; }
+}
+
 .container { max-width: 1080px; margin: 0 auto; padding: 40px 32px; }
 
 .page-head {

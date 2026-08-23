@@ -15,6 +15,8 @@
       <img class="brand-mark" src="/static/omi-mark.png" alt="Omi" />
       <span class="brand-sub">Operations</span>
     </a>
+    <input type="checkbox" id="nav-toggle" class="nav-toggle" />
+    <label for="nav-toggle" class="nav-toggle-btn" aria-label="Menu"><span></span><span></span><span></span></label>
     <nav>
       <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">Bookings</a>
       <a href="/cleaning" class="{{ 'active' if request.url.path == '/cleaning' else '' }}">Cleaning</a>
