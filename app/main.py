@@ -40,6 +40,7 @@ from app.models import (
     Transaction,
 )
 from app.pricing import price_breakdown
+from app.public_api import router as public_router
 from app.security import hash_password, verify_password
 from app.reconcile.importer import ImportError_, parse_csv
 from app.reconcile.matching import suggest_bookings
@@ -55,6 +56,7 @@ with SessionLocal() as _db:
     seed_default_templates(_db)
 
 app = FastAPI(title="Omi Holiday — Operations")
+app.include_router(public_router)
 app.add_middleware(SessionAuthMiddleware)
 # Outermost middleware — lets omiholiday.com fetch /api/public/* directly
 # from the visitor's own browser (a different origin), read-only.
@@ -93,6 +95,11 @@ def start_scheduler():
 def stop_scheduler():
     if scheduler.running:
         scheduler.shutdown(wait=False)
+
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok"}
 
 
 @app.get("/login")

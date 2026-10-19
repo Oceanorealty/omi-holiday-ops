@@ -29,7 +29,7 @@ from starlette.responses import RedirectResponse
 
 SESSION_COOKIE = "omi_session"
 SESSION_MAX_AGE = 60 * 60 * 24 * 30  # 30 days
-PUBLIC_PATHS = {"/login"}
+PUBLIC_PATHS = {"/login", "/healthz"}
 # /api/public/ is read-only listing data meant to be fetched directly from
 # the omiholiday.com marketing site — it must stay reachable without a
 # session cookie, since the browser making that request is a site visitor's.
