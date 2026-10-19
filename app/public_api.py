@@ -197,6 +197,17 @@ def _make_quote_token(
     return _sign(payload)
 
 
+def _quote_rows(db, prop, check_in, check_out):
+    if prop.pricing_mode == "dynamic":
+        return price_breakdown(db, prop, check_in, check_out)
+    rows = []
+    current = check_in
+    while current < check_out:
+        rows.append({"date": current, "price": prop.base_nightly_rate})
+        current += timedelta(days=1)
+    return rows
+
+
 @router.get("/quote")
 def get_quote(
     property_id: int = Query(...),
@@ -213,7 +224,7 @@ def get_quote(
     if (co - ci).days > MAX_RANGE_DAYS:
         raise HTTPException(status_code=400, detail=f"Stay too long (max {MAX_RANGE_DAYS} nights)")
 
-    rows = price_breakdown(db, prop, ci, co)
+    rows = _quote_rows(db, prop, ci, co)
     nightly_total: Optional[Decimal] = None
     if rows and all(row["price"] is not None for row in rows):
         nightly_total = sum((row["price"] for row in rows), Decimal("0"))
