@@ -13,17 +13,21 @@
   --ok-bg: #e6efe1;
   --ok-ink: #3f6b3a;
 
-  --font-display: "Fraunces", Georgia, serif;
-  --font-body: "Jost", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: "Fraunces", "Songti SC", "STSong", "Noto Serif CJK SC", Georgia, serif;
+  --font-body: "Jost", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
 }
 
 * { box-sizing: border-box; }
 body {
   margin: 0;
   font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
   color: var(--charcoal);
   background: var(--cream);
+  text-size-adjust: 100%;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .topbar {
@@ -114,7 +118,7 @@ nav a.active { color: var(--gold); background: rgba(201, 168, 106, 0.12); }
     border-top: 1px solid rgba(255, 255, 255, 0.1);
   }
   .nav-toggle:checked ~ nav { display: flex; }
-  nav a { text-align: left; padding: 12px 14px; }
+  nav a { text-align: left; padding: 12px 14px; font-size: 14px; letter-spacing: 0.8px; }
   .container { padding: 24px 20px; }
 }
 
@@ -129,14 +133,17 @@ nav a.active { color: var(--gold); background: rgba(201, 168, 106, 0.12); }
 h1 {
   font-family: var(--font-display);
   font-weight: 500;
-  font-size: 30px;
+  font-size: clamp(1.75rem, 1.3rem + 1.1vw, 2.25rem);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
   margin: 0;
   color: var(--navy);
 }
 h2 {
   font-family: var(--font-display);
   font-weight: 500;
-  font-size: 18px;
+  font-size: clamp(1.2rem, 1.05rem + 0.45vw, 1.5rem);
+  line-height: 1.25;
   margin: 0 0 14px;
   color: var(--navy);
 }
@@ -186,11 +193,12 @@ h2 {
   padding: 14px 16px;
   border-bottom: 1px solid var(--border);
   font-size: 14px;
+  line-height: 1.45;
 }
 .table th {
   color: var(--muted);
   font-weight: 500;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 1px;
   text-transform: uppercase;
   background: var(--cream);
@@ -245,7 +253,7 @@ textarea {
 .field { margin-bottom: 12px; }
 .field label {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.5px;
   text-transform: uppercase;
   color: var(--muted);
@@ -279,7 +287,7 @@ textarea {
   color: var(--charcoal);
   cursor: pointer;
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -301,4 +309,24 @@ select {
   font-family: var(--font-body);
   background: var(--cream);
   color: var(--charcoal);
+}
+
+@media (max-width: 560px) {
+  .topbar { padding: 14px 16px; }
+  .container { padding: 22px 16px; }
+  .page-head { align-items: flex-start; gap: 12px; margin-bottom: 20px; }
+  .card { padding: 20px 18px; border-radius: 12px; }
+  .banner { font-size: 15px; line-height: 1.5; }
+  .table th, .table td { padding: 12px 14px; }
+  .table th { font-size: 11px; }
+  .table.small td, .table.small th { font-size: 13px; }
+  .inline-form { flex-wrap: wrap; }
+  .inline-form input[type="email"], .inline-form input[type="text"] { width: 100%; }
+  textarea,
+  .field input[type="text"],
+  .form-row input,
+  .form-row select,
+  select { font-size: 16px; }
+  .btn { min-height: 42px; }
+  .muted { font-size: 14px; }
 }
