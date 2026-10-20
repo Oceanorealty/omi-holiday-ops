@@ -13,8 +13,8 @@
   --ok-bg: #e6efe1;
   --ok-ink: #3f6b3a;
 
-  --font-display: "Fraunces", "Songti SC", "STSong", "Noto Serif CJK SC", Georgia, serif;
-  --font-body: "Jost", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+  --font-display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -77,7 +77,7 @@ nav a {
   padding: 8px 14px;
   color: rgba(247, 244, 238, 0.75);
   text-decoration: none;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   letter-spacing: 1.2px;
   text-transform: uppercase;
@@ -133,17 +133,17 @@ nav a.active { color: var(--gold); background: rgba(201, 168, 106, 0.12); }
 h1 {
   font-family: var(--font-display);
   font-weight: 500;
-  font-size: clamp(1.75rem, 1.3rem + 1.1vw, 2.25rem);
-  line-height: 1.15;
-  letter-spacing: -0.01em;
+  font-size: 28px;
+  line-height: 1.25;
+  letter-spacing: 0;
   margin: 0;
   color: var(--navy);
 }
 h2 {
   font-family: var(--font-display);
   font-weight: 500;
-  font-size: clamp(1.2rem, 1.05rem + 0.45vw, 1.5rem);
-  line-height: 1.25;
+  font-size: 19px;
+  line-height: 1.35;
   margin: 0 0 14px;
   color: var(--navy);
 }
@@ -287,7 +287,7 @@ textarea {
   color: var(--charcoal);
   cursor: pointer;
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -297,7 +297,7 @@ textarea {
 .btn.primary { background: var(--charcoal); color: var(--cream); border-color: var(--charcoal); }
 .btn.tiny { padding: 5px 12px; font-size: 10px; letter-spacing: 0.5px; }
 
-.muted { color: var(--muted); font-size: 13px; }
+.muted { color: var(--muted); font-size: 14px; }
 
 input[type="checkbox"] { accent-color: var(--gold-deep); }
 
@@ -311,10 +311,17 @@ select {
   color: var(--charcoal);
 }
 
+@media (min-width: 861px) {
+  h1 { font-size: 30px; }
+  h2 { font-size: 20px; }
+}
+
 @media (max-width: 560px) {
   .topbar { padding: 14px 16px; }
   .container { padding: 22px 16px; }
   .page-head { align-items: flex-start; gap: 12px; margin-bottom: 20px; }
+  h1 { font-size: 26px; }
+  h2 { font-size: 18px; }
   .card { padding: 20px 18px; border-radius: 12px; }
   .banner { font-size: 15px; line-height: 1.5; }
   .table th, .table td { padding: 12px 14px; }
