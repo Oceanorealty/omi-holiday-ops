@@ -46,7 +46,10 @@ scheduler would treat test bookings as real stays and could send guest emails.
    older than 23 hours is blocked for reconciliation, since Stripe may prune
    its idempotency key after 24 hours.
 3. Use Stripe.js and the sandbox publishable key to confirm the card payment.
-   This PR does not yet include the WordPress checkout component.
+   A sandbox embed template is included in `docs/B5-wordpress-embed.html` and
+   `app/static/public-booking.js`. Replace its test service origin, test property
+   ID and public `pk_test_` key. It must be served from an allowed CORS origin or
+   the same test service origin. Never place secret keys in this component.
 4. Stripe's signed callback validates the persisted payment snapshot and
    creates one direct/confirmed booking. No guest details go into Stripe metadata.
 5. Poll `GET /api/public/booking/{payment_intent_id}` with
@@ -91,8 +94,14 @@ Before enabling any test deployment, verify PostgreSQL concurrency/lock-timeout
 behavior and additive schema setup. Then use Stripe sandbox cards to verify
 intent creation, signature verification, duplicate deliveries, booking insertion,
 conflict refund, pending/failed refund recovery, and status polling. Complete the
-WordPress frontend separately. Live payment support and paid production rollout
+WordPress frontend integration and browser payment testing separately. Live payment support and paid production rollout
 are explicitly outside this draft.
+
+To run the same suite against dedicated test PostgreSQL as well, provide
+`B5_TEST_POSTGRES_URL` through the test environment. The suite rejects database
+names other than `omi_holiday_ops_b5_test_db`, and creates/drops a separate random
+schema per test so application tables remain untouched. No Stripe network calls
+or scheduler tasks run in these tests.
 
 References: [Stripe webhooks](https://docs.stripe.com/webhooks),
 [idempotent requests](https://docs.stripe.com/api/idempotent_requests),

@@ -3,6 +3,7 @@ import copy
 import hashlib
 import hmac
 import json
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
@@ -12,7 +13,8 @@ import pytest
 import stripe
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
 from app.db import Base, get_db
@@ -21,14 +23,25 @@ from app.public_api import router as public_router
 from app.public_booking import router as booking_router
 
 
-@pytest.fixture
-def env(tmp_path, monkeypatch):
+@pytest.fixture(params=["sqlite"] + (["postgresql"] if os.environ.get("B5_TEST_POSTGRES_URL") else []))
+def env(tmp_path, monkeypatch, request):
     monkeypatch.setenv("SECRET_KEY", "test-secret-for-quote-and-status-" + "x" * 32)
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_fake_no_network")
     monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_local_test")
     monkeypatch.setenv("PUBLIC_BOOKING_ENABLED", "test")
-    engine = create_engine("sqlite:///" + str(tmp_path / "test.db"),
-                           connect_args={"check_same_thread": False, "timeout": 10})
+    admin_engine = None
+    if request.param == "postgresql":
+        url = make_url(os.environ["B5_TEST_POSTGRES_URL"].replace("postgres://", "postgresql://", 1))
+        if url.database != "omi_holiday_ops_b5_test_db":
+            pytest.fail("PostgreSQL tests require the dedicated B5 test database")
+        schema = "b5_test_" + uuid4().hex
+        admin_engine = create_engine(url)
+        with admin_engine.begin() as conn:
+            conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+        engine = create_engine(url, connect_args={"options": f"-csearch_path={schema}"})
+    else:
+        engine = create_engine("sqlite:///" + str(tmp_path / "test.db"),
+                               connect_args={"check_same_thread": False, "timeout": 10})
     Base.metadata.create_all(engine)
     sessions = sessionmaker(bind=engine)
     with sessions() as db:
@@ -74,6 +87,10 @@ def env(tmp_path, monkeypatch):
                 "quote_token": quote["quote_token"]}
         yield client, sessions, body, intents, refunds
     engine.dispose()
+    if admin_engine:
+        with admin_engine.begin() as conn:
+            conn.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        admin_engine.dispose()
 
 
 def webhook(client, intent, **changes):
