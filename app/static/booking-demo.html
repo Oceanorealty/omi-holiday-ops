@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Omi · Sandbox booking</title>
+<style>
+body{font:16px system-ui,sans-serif;background:#f7f4ee;color:#242136;margin:0;padding:32px 20px}
+main{max-width:560px;margin:auto;background:white;border-radius:18px;padding:28px}
+h1{font-size:24px}label{display:block;margin:16px 0}input,select,button{font:inherit;box-sizing:border-box;padding:12px;width:100%;margin-top:6px;border:1px solid #ccc;border-radius:8px}
+button{background:#16132a;color:white;cursor:pointer}button:disabled{opacity:.5;cursor:wait}
+[role=status]{padding:12px 0;line-height:1.5}small{color:#5d566d} [hidden]{display:none}
+</style>
+<main>
+<h1>Sandbox booking</h1>
+<p>Use a test listing and Stripe sandbox card. This page cannot accept live Stripe keys.</p>
+<form id="setup">
+<label>Published test property ID<input id="property" type="number" min="1" value="1" required></label>
+<label>Stripe test publishable key<input id="publishable" placeholder="pk_test_…" autocomplete="off" required></label>
+<small>Only the publishable key belongs here. Never enter a secret key.</small>
+<button>Open sandbox checkout</button>
+</form>
+<div id="checkout"></div>
+</main>
+<script src="https://js.stripe.com/v3/"></script>
+<script>
+document.querySelector('#setup').addEventListener('submit',event=>{
+  event.preventDefault();
+  const field=document.querySelector('#publishable');
+  if(!/^pk_test_[A-Za-z0-9]+$/.test(field.value.trim())){
+    field.setCustomValidity('Enter a Stripe pk_test_ publishable key.');field.reportValidity();return;
+  }
+  field.setCustomValidity('');
+  const root=document.querySelector('#checkout');
+  root.dataset.omiCheckout='';root.dataset.apiBase=location.origin;
+  root.dataset.propertyId=document.querySelector('#property').value;
+  root.dataset.stripeKey=field.value.trim();
+  document.querySelector('#setup').hidden=true;
+  const script=document.createElement('script');script.src='/static/public-booking.js';document.body.append(script);
+});
+document.querySelector('#publishable').addEventListener('input',event=>event.target.setCustomValidity(''));
+</script>
+</html>
