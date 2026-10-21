@@ -82,3 +82,13 @@ the initial deploy (adding `bookings.amount`, reshaping `transactions`).
 Any future schema change to an already-deployed table needs the same
 treatment: a guarded check-then-alter in `migrate.py`, tested against a
 copy of production data before deploying.
+
+
+## Hostaway / OPS research branch
+
+This branch adds isolated safety foundations and a read-only integration boundary.
+Read `docs/IMPLEMENTATION_STATUS.md` before enabling automation or deployment.
+The scheduler and external email delivery are opt-in; existing automated behavior
+must be explicitly migrated. Hostaway account access and live Harness validation
+are not available in this environment. See `docs/HARNESS_READONLY.md` for the
+scoped MCP tool bridge and its configuration draft.
