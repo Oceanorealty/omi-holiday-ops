@@ -84,11 +84,12 @@ treatment: a guarded check-then-alter in `migrate.py`, tested against a
 copy of production data before deploying.
 
 
-## Hostaway / OPS research branch
+## OPS operational release — 2026-10-21
 
-This branch adds isolated safety foundations and a read-only integration boundary.
-Read `docs/IMPLEMENTATION_STATUS.md` before enabling automation or deployment.
-The scheduler and external email delivery are opt-in; existing automated behavior
-must be explicitly migrated. Hostaway account access and live Harness validation
-are not available in this environment. See `docs/HARNESS_READONLY.md` for the
-scoped MCP tool bridge and its configuration draft.
+Adds the admin overview, property calendar, maintenance tasks, acceptance checklists and signed operator review history. Read [deployment and rollback notes](docs/DEPLOYMENT_20261021.md) before publishing or changing automation.
+
+The existing scheduled calendar/cleaning sync retains its enabled default. Guest/owner delivery is held for review unless explicitly enabled; imported bookings do not opt in automatically. Free Render instances sleep when idle, so their in-process scheduler does not guarantee on-time background work.
+
+Database changes are additive and guarded by a same-database rollback snapshot. `/healthz` is cheap liveness; authenticated `/operations/readiness` tests the database. Private pages bypass shared caching. CI uses disposable PostgreSQL and synthetic records, never production data.
+
+Hostaway observations remain in a separate read-only shadow layer. No live Hostaway account connection is enabled. See [implementation scope](docs/IMPLEMENTATION_STATUS.md) and [read-only MCP configuration](docs/HARNESS_READONLY.md).
