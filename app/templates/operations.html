@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Operations overview — Omi Holiday{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Operations overview</h1><p class="muted">Resolve gaps before they affect a guest or an owner.</p></div>
+<section class="card"><h2>Needs review</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>Review</th><th>Count</th><th>Next step</th></tr></thead><tbody>
+<tr><td>Overdue maintenance and operations tasks</td><td>{{ overdue_work_orders }}</td><td><a href="/operations/tasks">Assign and review work</a></td></tr>
+<tr><td>Bookings missing from their calendar source</td><td>{{ missing_sources }}</td><td><a href="/">Check the source before cancelling</a></td></tr>
+<tr><td>Bookings without an amount</td><td>{{ missing_amounts }}</td><td><a href="/transactions">Complete finance records</a></td></tr>
+<tr><td>Changed cleaning schedules</td><td>{{ schedule_reviews }}</td><td><a href="/cleaning">Review assigned work</a></td></tr>
+<tr><td>Messages with an uncertain delivery result</td><td>{{ message_reviews }}</td><td>Check the mailbox before sending again</td></tr>
+</tbody></table></div></section>
+<section class="card"><h2>Hostaway connection</h2><p>No live account connection has been verified. Imported observations stay separate from bookings, messages and accounts.</p>
+<p>{{ shadow_count }} observations · {{ unmapped }} need a property match.</p>
+{% if runs %}<div class="table-wrap"><table class="table"><thead><tr><th>Run</th><th>Result</th><th>Records</th></tr></thead><tbody>{% for run in runs %}<tr><td>{{ run.id }}</td><td>{{ run.state }}</td><td>{{ run.record_count }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+</section>
+<section class="card"><h2>Automation status</h2><p>Scheduled processing: {{ 'enabled' if scheduler_enabled else 'paused' }}. Guest message delivery: {{ 'enabled for opted-in bookings' if dispatch_enabled else 'held for review' }}.</p><p class="muted">Owner statements require complete amounts, commission settings and final review. Imported bookings start with guest messages paused.</p></section>
+<section class="card"><h2>Resolve a review</h2>
+<p class="muted">Check the original calendar, assignment or sent mailbox first. Each decision is recorded. These actions do not send messages or collect payments.</p>
+{% if reviews_truncated %}<p>Showing the first 50 records of each type. Resolve these and reload to see the rest.</p>{% endif %}
+{% for item in review_items %}
+<article style="border-top:1px solid #ddd;padding:16px 0">
+<h3>{{ item.kind|title }} review #{{ item.id }}</h3>
+{% if item.kind == 'source' %}<p>Booking #{{ item.record.id }} · Property #{{ item.record.property_id }} · {{ item.record.check_in.strftime('%Y-%m-%d') }} to {{ item.record.check_out.strftime('%Y-%m-%d') }}</p>{% endif %}
+{% if item.kind == 'cleaning' %}<p>Task #{{ item.record.id }} · Current schedule: {{ item.record.due_date }} · Order checkout: {{ item.record.booking.check_out }}</p>{% endif %}
+{% if item.kind in ['message','statement'] %}<p>Delivery result: {{ item.record.state }}. Record “sent” only after verifying the sent mailbox or provider record. Closing leaves the item unsent and does not authorize a retry.</p>{% endif %}
+{% for action, token in item.actions %}
+{% if not (item.kind == 'cleaning' and action == 'use_checkout' and item.record.status.value == 'done') %}
+<form method="post" action="/operations/reviews/{{ item.kind }}/{{ item.id }}/{{ action }}" style="margin:12px 0">
+<input type="hidden" name="token" value="{{ token }}" />
+<label for="note-{{ item.kind }}-{{ item.id }}-{{ action }}">Evidence checked (do not include passwords or door codes)</label>
+<input id="note-{{ item.kind }}-{{ item.id }}-{{ action }}" type="text" name="note" required minlength="10" maxlength="1000" placeholder="What did you check, and what was confirmed?" />
+<button class="btn" type="submit">{{ {'keep_active':'Verified: keep booking active','confirm_cancelled':'Verified: cancel this booking','keep_schedule':'Keep the existing task schedule','use_checkout':'Use the updated checkout time','record_sent':'Verified in provider: record as sent','close_without_resend':'Close without sending again'}[action] }}</button>
+</form>
+{% endif %}
+{% endfor %}
+</article>
+{% else %}<p>No reviews are currently eligible for a decision.</p>{% endfor %}
+</section>
+<section class="card"><h2>Recent decisions</h2>
+{% if review_history %}<div class="table-wrap"><table class="table"><thead><tr><th>Record</th><th>Decision</th><th>Reviewed by</th><th>Evidence note</th></tr></thead><tbody>
+{% for review in review_history %}<tr><td>{{ review.entity_kind }} #{{ review.entity_id }}</td><td>{{ review.action.replace('_',' ') }}</td><td>{{ review.actor }}</td><td>{{ review.note }}</td></tr>{% endfor %}
+</tbody></table></div>{% else %}<p>No recorded decisions yet.</p>{% endif %}</section>
+{% endblock %}
