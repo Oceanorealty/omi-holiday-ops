@@ -337,3 +337,13 @@ select {
   .btn { min-height: 42px; }
   .muted { font-size: 14px; }
 }
+/* Operational task forms: one readable field per row, including on mobile. */
+.ops-task-form { display: grid; gap: 8px; margin: 16px 0; }
+.ops-task-form > label { display: block; font-weight: 500; margin-top: 8px; }
+.ops-task-form input:not([type="hidden"]):not([type="checkbox"]),
+.ops-task-form select, .ops-task-form textarea { width: 100%; box-sizing: border-box; min-width: 0; }
+.ops-task-form input:not([type="hidden"]):not([type="checkbox"]) {
+  padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px;
+  font: inherit; background: var(--cream); color: var(--charcoal);
+}
+.ops-task-form .btn { justify-self: start; }

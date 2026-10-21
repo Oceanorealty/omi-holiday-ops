@@ -9,7 +9,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./omi.db")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {"connect_timeout": 5}
 # Managed Postgres can close idle SSL connections. Validate a pooled connection
 # before checkout; never retry a transaction that may already have side effects.
 engine = create_engine(

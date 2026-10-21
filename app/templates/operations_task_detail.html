@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block title %}Task #{{ task.id }} — Omi Holiday{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Task #{{ task.id }} · {{ task.title }}</h1><p>{{ property.name }} · <a href="/operations/tasks">Back to tasks</a></p></div>
+<section class="card"><h2>Update task</h2><p>Start work before recording completion. Reopen a closed task before resuming work. Every save records your note and the task state.</p><form class="ops-task-form" method="post" action="/operations/tasks/{{ task.id }}">{% include 'operations_task_fields.html' %}</form></section>
+<section class="card"><h2>Checklist</h2><p>Every required item must be checked before completion. Reopening a closed task resets its checks for a fresh inspection; the previous results stay in history.</p>
+{% for c in checks %}
+<article><h3>{{ c.label }} · {{ 'Required' if c.required else 'Optional' }}</h3>
+<p>{{ 'Checked' if c.completed else 'Pending' }}{% if c.completed %} by {{ c.checked_by }} at {{ c.checked_at }} UTC{% endif %}</p>
+{% if task.status in ['open','in_progress'] %}<form class="ops-task-form" method="post" action="/operations/tasks/{{ task.id }}/checklist">
+<input type="hidden" name="token" value="{{ check_token }}"><input type="hidden" name="action" value="{{ 'uncheck' if c.completed else 'check' }}"><input type="hidden" name="item_id" value="{{ c.id }}">
+<label for="check-note-{{ c.id }}">Inspection note</label><input id="check-note-{{ c.id }}" name="note" required minlength="10" maxlength="1000">
+<button class="btn" type="submit">{{ 'Mark pending' if c.completed else 'Confirm checked' }}</button></form>{% endif %}</article>
+{% else %}<p>No checklist items. Add the checks this task needs.</p>{% endfor %}
+{% if task.status in ['open','in_progress'] and checks|length < 50 %}<h3>Add an item</h3><form class="ops-task-form" method="post" action="/operations/tasks/{{ task.id }}/checklist">
+<input type="hidden" name="token" value="{{ check_token }}"><input type="hidden" name="action" value="add">
+<label for="check-label">Check to perform</label><input id="check-label" name="label" required maxlength="240">
+<label><input type="checkbox" name="required" value="1" checked>Required before completion</label>
+<label for="add-note">Reason for adding this check</label><input id="add-note" name="note" required minlength="10" maxlength="1000">
+<button class="btn" type="submit">Add checklist item</button></form>{% endif %}</section>
+<section class="card"><h2>History</h2><p>Most recent 100 changes. Times are UTC.</p>{% for e in events %}<article><h3>{{ e.created_at }} · {{ e.actor }}</h3><p>{{ e.note }}</p><details><summary>Recorded task state</summary><pre style="white-space:pre-wrap">{{ e.snapshot }}</pre></details></article>{% endfor %}</section>
+{% endblock %}

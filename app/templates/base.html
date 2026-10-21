@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20261020-typography" />
+  <link rel="stylesheet" href="/static/style.css?v=ops-checklists-20261021" />
 </head>
 <body>
   <header class="topbar">
@@ -18,6 +18,9 @@
     <input type="checkbox" id="nav-toggle" class="nav-toggle" />
     <label for="nav-toggle" class="nav-toggle-btn" aria-label="Menu"><span></span><span></span><span></span></label>
     <nav>
+      <a href="/operations/tasks" class="{{ 'active' if request.url.path.startswith('/operations/tasks') else '' }}">Tasks</a>
+      <a href="/operations/calendar" class="{{ 'active' if request.url.path == '/operations/calendar' else '' }}">Calendar</a>
+      <a href="/operations" class="{{ 'active' if request.url.path == '/operations' else '' }}">Overview</a>
       <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">Bookings</a>
       <a href="/cleaning" class="{{ 'active' if request.url.path == '/cleaning' else '' }}">Cleaning</a>
       <a href="/transactions" class="{{ 'active' if request.url.path == '/transactions' else '' }}">Finance</a>

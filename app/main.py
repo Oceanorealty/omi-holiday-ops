@@ -7,7 +7,7 @@ import uuid
 from calendar import monthrange
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import FastAPI, Form, Request, UploadFile
+from fastapi import FastAPI, Form, Request, UploadFile, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -15,7 +15,7 @@ from fastapi.templating import Jinja2Templates
 
 from app import migrate
 from app.auth import SESSION_COOKIE, SESSION_MAX_AGE, SessionAuthMiddleware, make_session_cookie
-from app.comms.owner_reports import send_owner_reports
+from app.comms.owner_reports import send_owner_reports, _generate_statement, finalize_statement
 from app.comms.templates import seed_default_templates
 from app.comms.triggers import process_due_messages
 from app.db import Base, SessionLocal, engine
@@ -40,6 +40,7 @@ from app.models import (
     Transaction,
 )
 from app.pricing import price_breakdown
+from app.operations.router import router as operations_router, require_admin
 from app.public_api import router as public_router
 from app.security import hash_password, verify_password
 from app.reconcile.importer import ImportError_, parse_csv
@@ -49,6 +50,9 @@ from app.sync.cleaning import sync_cleaning_tasks
 from app.sync.ical_export import build_ics
 from app.sync.ical_sync import recompute_conflicts, sync_all, sync_feed
 
+from app.deployment import ensure_release_snapshot
+_release_snapshot = ensure_release_snapshot(engine)
+print(f"OPS_RELEASE_SNAPSHOT state={_release_snapshot['state']} tables={_release_snapshot['tables']}", flush=True)
 migrate.run(engine)
 Base.metadata.create_all(bind=engine)
 
@@ -56,8 +60,22 @@ with SessionLocal() as _db:
     seed_default_templates(_db)
 
 app = FastAPI(title="Omi Holiday — Operations")
+from app.operations.task_router import router as task_router
+app.include_router(task_router)
+app.include_router(operations_router)
 app.include_router(public_router)
 app.add_middleware(SessionAuthMiddleware)
+
+
+@app.middleware("http")
+async def prevent_private_page_caching(request: Request, call_next):
+    response = await call_next(request)
+    if not request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "private, no-store"
+        existing = response.headers.get("Vary", "")
+        response.headers["Vary"] = ", ".join(dict.fromkeys([v.strip() for v in existing.split(",") if v.strip()] + ["Cookie", "Authorization"]))
+    return response
+
 # Outermost middleware — lets omiholiday.com fetch /api/public/* directly
 # from the visitor's own browser (a different origin), read-only.
 app.add_middleware(
@@ -87,7 +105,7 @@ scheduler.add_job(_scheduled_sync, "interval", minutes=30, id="ical_sync")
 
 @app.on_event("startup")
 def start_scheduler():
-    if not scheduler.running:
+    if os.environ.get("OPS_SCHEDULER_ENABLED", "1") == "1" and not scheduler.running:
         scheduler.start()
 
 
@@ -99,7 +117,15 @@ def stop_scheduler():
 
 @app.get("/healthz")
 def healthz():
-    return {"status": "ok"}
+    # Render calls this frequently. Keep liveness cheap so it does not keep
+    # a scale-to-zero database awake around the clock.
+    return {"status": "ok", "release": "ops-20261021"}
+
+
+@app.get("/operations/readiness")
+def database_readiness(admin=Depends(require_admin)):
+    from app.operations.health import database_health
+    return database_health(engine)
 
 
 @app.get("/login")
@@ -775,7 +801,7 @@ def cleaning_page(request: Request):
     try:
         tasks = (
             db.query(CleaningTask)
-            .filter(CleaningTask.status != CleaningStatus.done)
+            .filter(CleaningTask.status != CleaningStatus.done, CleaningTask.cancelled_at.is_(None))
             .order_by(CleaningTask.due_date)
             .all()
         )
@@ -818,7 +844,7 @@ def assign_cleaning_task(task_id: int, assignee: str = Form(""), cleaner_id: str
     db = SessionLocal()
     try:
         task = db.get(CleaningTask, task_id)
-        if task:
+        if task and task.cancelled_at is None:
             task.assignee = assignee or None
             task.cleaner_id = int(cleaner_id) if cleaner_id else None
             if task.status != CleaningStatus.done:
@@ -834,7 +860,7 @@ def toggle_quality_check(task_id: int, quality_notes: str = Form("")):
     db = SessionLocal()
     try:
         task = db.get(CleaningTask, task_id)
-        if task:
+        if task and task.cancelled_at is None:
             task.quality_checked = not task.quality_checked
             task.quality_notes = quality_notes or None
             db.commit()
@@ -882,7 +908,7 @@ def cleaner_portal(request: Request, token: str):
             )
         tasks = (
             db.query(CleaningTask)
-            .filter(CleaningTask.cleaner_id == cleaner.id, CleaningTask.status != CleaningStatus.done)
+            .filter(CleaningTask.cleaner_id == cleaner.id, CleaningTask.status != CleaningStatus.done, CleaningTask.cancelled_at.is_(None))
             .order_by(CleaningTask.due_date)
             .all()
         )
@@ -900,7 +926,7 @@ def cleaner_portal_complete(token: str, task_id: int):
     try:
         cleaner = db.query(Cleaner).filter(Cleaner.portal_token == token).first()
         task = db.get(CleaningTask, task_id)
-        if cleaner and task and task.cleaner_id == cleaner.id:
+        if cleaner and task and task.cleaner_id == cleaner.id and task.cancelled_at is None:
             task.status = CleaningStatus.done
             db.commit()
     finally:
@@ -913,7 +939,7 @@ def complete_cleaning_task(task_id: int):
     db = SessionLocal()
     try:
         task = db.get(CleaningTask, task_id)
-        if task:
+        if task and task.cancelled_at is None:
             task.status = CleaningStatus.done
             db.commit()
     finally:
@@ -926,7 +952,7 @@ def reopen_cleaning_task(task_id: int):
     db = SessionLocal()
     try:
         task = db.get(CleaningTask, task_id)
-        if task:
+        if task and task.cancelled_at is None:
             task.status = CleaningStatus.assigned if task.assignee else CleaningStatus.pending
             db.commit()
     finally:
@@ -1106,51 +1132,10 @@ def generate_owner_statement(property_id: int, period: str = Form(...)):
         if not prop:
             return RedirectResponse(url="/transactions", status_code=303)
 
-        year, month = (int(x) for x in period.split("-"))
-        start = datetime(year, month, 1)
-        last_day = monthrange(year, month)[1]
-        end = datetime(year, month, last_day, 23, 59, 59)
-
-        gross = (
-            db.query(Booking)
-            .filter(
-                Booking.property_id == property_id,
-                Booking.status == BookingStatus.confirmed,
-                Booking.check_out >= start,
-                Booking.check_out <= end,
-            )
-            .all()
-        )
-        gross_revenue = sum((b.amount or Decimal("0")) for b in gross)
-
-        expenses = (
-            db.query(Expense)
-            .filter(Expense.property_id == property_id, Expense.occurred_at >= start, Expense.occurred_at <= end)
-            .all()
-        )
-        total_expenses = sum((e.amount for e in expenses), Decimal("0"))
-
-        commission_pct = prop.commission_pct or Decimal("0")
-        commission_amount = (gross_revenue * commission_pct / Decimal("100")).quantize(Decimal("0.01"))
-
-        statement = (
-            db.query(OwnerStatement)
-            .filter(OwnerStatement.property_id == property_id, OwnerStatement.period == period)
-            .first()
-        )
-        if statement and statement.finalized:
-            return RedirectResponse(url="/transactions", status_code=303)
-        if not statement:
-            statement = OwnerStatement(property_id=property_id, period=period, adjustment_amount=Decimal("0"))
-            db.add(statement)
-
-        statement.gross_revenue = gross_revenue
-        statement.total_expenses = total_expenses
-        statement.commission_amount = commission_amount
-        statement.net_payout = (
-            gross_revenue - total_expenses - commission_amount + statement.adjustment_amount
-        )
-        statement.generated_at = datetime.utcnow()
+        try:
+            _generate_statement(db, prop, period)
+        except ValueError:
+            raise HTTPException(400, "Invalid statement period") from None
         db.commit()
     finally:
         db.close()
@@ -1186,7 +1171,10 @@ def finalize_owner_statement(statement_id: int):
     try:
         statement = db.get(OwnerStatement, statement_id)
         if statement:
-            statement.finalized = not statement.finalized
+            try:
+                finalize_statement(db, statement)
+            except ValueError:
+                raise HTTPException(409, "Statement needs missing amounts or commission settings") from None
             db.commit()
     finally:
         db.close()
@@ -1216,7 +1204,7 @@ def owner_portal(request: Request, token: str):
             )
         statements = (
             db.query(OwnerStatement)
-            .filter(OwnerStatement.property_id == prop.id)
+            .filter(OwnerStatement.property_id == prop.id, OwnerStatement.finalized.is_(True))
             .order_by(OwnerStatement.period.desc())
             .limit(12)
             .all()

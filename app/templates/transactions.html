@@ -44,19 +44,19 @@
   <div class="table-wrap">
   <table class="table small">
     <thead>
-      <tr><th>Property</th><th>Month</th><th>Expected</th><th>Received</th><th>Variance</th></tr>
+      <tr><th>Property</th><th>Month</th><th>Expected</th><th>Confirmed in bank</th><th>Variance</th></tr>
     </thead>
     <tbody>
       {% for row in summary %}
       <tr>
         <td>{{ row.property_name }}</td>
         <td>{{ row.month }}</td>
-        <td>${{ '%.2f'|format(row.expected) }}</td>
+        <td>{% if row.expected is none %}Unknown ({{ row.missing_amount_count }} missing){% else %}${{ '%.2f'|format(row.expected) }}{% endif %}</td>
         <td>${{ '%.2f'|format(row.received) }}</td>
         <td>
-          <span class="tag {{ 'tag-ok' if row.variance == 0 else 'tag-warn' }}">
-            {{ '+' if row.variance > 0 else '' }}${{ '%.2f'|format(row.variance) }}
-          </span>
+          {% if row.variance is none %}Needs amounts{% else %}
+          <span class="tag {{ 'tag-ok' if row.variance == 0 else 'tag-warn' }}">${{ '%.2f'|format(row.variance) }}</span>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -195,7 +195,7 @@
   {% if statements %}
   <div class="table-wrap" style="margin-top:12px">
   <table class="table small">
-    <thead><tr><th>Property</th><th>Period</th><th>Gross</th><th>Expenses</th><th>Commission</th><th>Adjustment</th><th>Net</th><th></th></tr></thead>
+    <thead><tr><th>Property</th><th>Period</th><th>Known gross</th><th>Expenses</th><th>Commission</th><th>Adjustment</th><th>Net</th><th></th></tr></thead>
     <tbody>
       {% for s in statements %}
       <tr>
@@ -211,10 +211,10 @@
             {% if not s.finalized %}<button class="btn tiny" type="submit">save</button>{% endif %}
           </form>
         </td>
-        <td><strong>${{ s.net_payout }}</strong></td>
+        <td><strong>{% if s.missing_amount_count %}Draft: {{ s.missing_amount_count }} amounts missing{% else %}${{ s.net_payout }}{% endif %}</strong></td>
         <td>
           <form method="post" action="/statements/{{ s.id }}/finalize">
-            <button class="btn tiny {{ 'primary' if s.finalized }}" type="submit">{{ '✓ finalized' if s.finalized else 'finalize' }}</button>
+            <button class="btn tiny {{ 'primary' if s.finalized }}" type="submit" {% if s.finalized or s.missing_amount_count %}disabled{% endif %}>{{ '✓ finalized' if s.finalized else 'finalize' }}</button>
           </form>
         </td>
       </tr>
