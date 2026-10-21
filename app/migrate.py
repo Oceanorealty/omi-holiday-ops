@@ -7,6 +7,7 @@ from sqlalchemy import inspect, text
 
 
 def run(engine) -> None:
+    # Additive upgrades only. Never drop operational data during startup.
     inspector = inspect(engine)
     existing_tables = inspector.get_table_names()
 
@@ -19,15 +20,12 @@ def run(engine) -> None:
     if "transactions" in existing_tables:
         columns = {c["name"] for c in inspector.get_columns("transactions")}
         if "imported_at" not in columns:
-            # Pre-Phase-4 shape (amount was a string, no imported_at marker) and
-            # the table has never had real rows written to it — safe to drop
-            # and let create_all() rebuild it with the current schema.
-            with engine.begin() as conn:
-                conn.execute(text("DROP TABLE transactions"))
+            raise RuntimeError("Legacy transaction schema requires a reviewed data-preserving migration")
 
     if "properties" in existing_tables:
         columns = {c["name"] for c in inspector.get_columns("properties")}
         new_columns = {
+            "time_zone": "VARCHAR DEFAULT 'UTC'",
             "published": "BOOLEAN DEFAULT FALSE",
             "suburb": "VARCHAR",
             "photo_url": "VARCHAR",
@@ -60,6 +58,11 @@ def run(engine) -> None:
     if "bookings" in existing_tables:
         columns = {c["name"] for c in inspector.get_columns("bookings")}
         new_columns = {
+            "source_feed_id": "INTEGER",
+            "source_last_seen_at": "TIMESTAMP",
+            "source_missing_since": "TIMESTAMP",
+            "notifications_enabled": "BOOLEAN DEFAULT FALSE",
+            "marketing_consent": "BOOLEAN DEFAULT FALSE",
             "door_code": "VARCHAR",
             "guest_portal_token": "VARCHAR",
             "is_block": "BOOLEAN DEFAULT FALSE",
@@ -86,6 +89,10 @@ def run(engine) -> None:
     if "cleaning_tasks" in existing_tables:
         columns = {c["name"] for c in inspector.get_columns("cleaning_tasks")}
         new_columns = {
+            "cancelled_at": "TIMESTAMP",
+            "schedule_reviewed_checkout": "TIMESTAMP",
+            "schedule_locked": "BOOLEAN DEFAULT FALSE",
+            "schedule_review_required": "BOOLEAN DEFAULT FALSE",
             "cleaner_id": "INTEGER",
             "quality_checked": "BOOLEAN DEFAULT FALSE",
             "quality_notes": "TEXT",
@@ -118,3 +125,9 @@ def run(engine) -> None:
         with engine.begin() as conn:
             conn.execute(text("ALTER TYPE staffrole ADD VALUE IF NOT EXISTS 'manager'"))
             conn.execute(text("ALTER TYPE staffrole ADD VALUE IF NOT EXISTS 'cleaner'"))
+
+    if "owner_statements" in existing_tables:
+        columns = {c["name"] for c in inspector.get_columns("owner_statements")}
+        if "missing_amount_count" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE owner_statements ADD COLUMN missing_amount_count INTEGER DEFAULT 0"))

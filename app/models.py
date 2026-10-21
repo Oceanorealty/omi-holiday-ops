@@ -82,6 +82,7 @@ class Property(Base):
     name = Column(String, nullable=False)
     address = Column(String, nullable=True)
     default_cleaner = Column(String, nullable=True)
+    time_zone = Column(String, nullable=False, default="UTC")
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Hotel-model support: a property can be a sub-unit of a larger listing
@@ -189,6 +190,11 @@ class Booking(Base):
     id = Column(Integer, primary_key=True)
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=False)
     guest_id = Column(Integer, ForeignKey("guests.id"), nullable=True)
+    source_feed_id = Column(Integer, ForeignKey("ical_feeds.id"), nullable=True)
+    source_last_seen_at = Column(DateTime, nullable=True)
+    source_missing_since = Column(DateTime, nullable=True)
+    notifications_enabled = Column(Boolean, nullable=False, default=False)
+    marketing_consent = Column(Boolean, nullable=False, default=False)
 
     platform = Column(Enum(PlatformName), nullable=False)
     uid = Column(String, nullable=False)  # raw UID from the source iCal event, for dedup
@@ -268,6 +274,10 @@ class CleaningTask(Base):
     # after the cleaner reports it done.
     quality_checked = Column(Boolean, default=False)
     quality_notes = Column(Text, nullable=True)
+    schedule_locked = Column(Boolean, nullable=False, default=False)
+    schedule_review_required = Column(Boolean, nullable=False, default=False)
+    schedule_reviewed_checkout = Column(DateTime, nullable=True)
+    cancelled_at = Column(DateTime, nullable=True)
 
     booking = relationship("Booking", back_populates="cleaning_task")
     property = relationship("Property")
@@ -407,8 +417,124 @@ class OwnerStatement(Base):
     adjustment_note = Column(Text, nullable=True)
     net_payout = Column(Numeric(10, 2), nullable=False, default=0)
 
+    missing_amount_count = Column(Integer, nullable=False, default=0)
     finalized = Column(Boolean, default=False)
     sent_at = Column(DateTime, nullable=True)
     generated_at = Column(DateTime, default=datetime.utcnow)
 
     property = relationship("Property")
+
+
+class MessageDelivery(Base):
+    """Persisted dispatch claim. SMTP outcomes may be unknown, never blindly retried."""
+    __tablename__ = "message_deliveries"
+    __table_args__ = (UniqueConstraint("booking_id", "event", "scheduled_for", name="uq_delivery"),)
+    id = Column(Integer, primary_key=True)
+    booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=False)
+    event = Column(String, nullable=False)
+    scheduled_for = Column(String, nullable=False)
+    state = Column(String, nullable=False, default="pending")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+
+
+class ExternalMapping(Base):
+    __tablename__ = "external_mappings"
+    __table_args__ = (UniqueConstraint("provider", "account", "external_id", name="uq_external_mapping"),)
+    id = Column(Integer, primary_key=True)
+    provider = Column(String, nullable=False)
+    account = Column(String, nullable=False)
+    external_id = Column(String, nullable=False)
+    property_id = Column(Integer, ForeignKey("properties.id"), nullable=False)
+
+
+class ShadowReservation(Base):
+    """Minimal, non-PII provider observations; never trigger operational side effects."""
+    __tablename__ = "shadow_reservations"
+    __table_args__ = (UniqueConstraint("provider", "account", "external_id", name="uq_shadow_reservation"),)
+    id = Column(Integer, primary_key=True)
+    provider = Column(String, nullable=False)
+    account = Column(String, nullable=False)
+    external_id = Column(String, nullable=False)
+    external_listing_id = Column(String, nullable=False)
+    property_id = Column(Integer, ForeignKey("properties.id"), nullable=True)
+    payload = Column(Text, nullable=False)
+    payload_hash = Column(String, nullable=False)
+    source_updated_at = Column(DateTime, nullable=True)
+    observed_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    state = Column(String, nullable=False, default="unmapped")
+
+
+class IntegrationRun(Base):
+    __tablename__ = "integration_runs"
+    id = Column(Integer, primary_key=True)
+    provider = Column(String, nullable=False)
+    account = Column(String, nullable=False)
+    state = Column(String, nullable=False)
+    record_count = Column(Integer, nullable=False, default=0)
+    error_code = Column(String, nullable=True)
+    observed_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class StatementDelivery(Base):
+    __tablename__ = "statement_deliveries"
+    id = Column(Integer, primary_key=True)
+    statement_id = Column(Integer, ForeignKey("owner_statements.id"), nullable=False, unique=True)
+    state = Column(String, nullable=False, default="pending")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class OperationsReview(Base):
+    """Append-only operator decisions. Contains references and hashes, never credentials."""
+    __tablename__ = "operations_reviews"
+    id = Column(Integer, primary_key=True)
+    token_digest = Column(String, nullable=False, unique=True)
+    actor = Column(String, nullable=False)
+    entity_kind = Column(String, nullable=False)
+    entity_id = Column(Integer, nullable=False)
+    action = Column(String, nullable=False)
+    note = Column(String(1000), nullable=False)
+    before_hash = Column(String, nullable=False)
+    after_hash = Column(String, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class WorkOrder(Base):
+    """Independent maintenance/operations task; does not block inventory or charge owners."""
+    __tablename__ = 'work_orders'
+    id = Column(Integer, primary_key=True)
+    property_id = Column(Integer, ForeignKey('properties.id'), nullable=False, index=True)
+    title = Column(String(160), nullable=False)
+    description = Column(Text, nullable=False, default='')
+    category = Column(String(24), nullable=False, default='maintenance')
+    priority = Column(String(16), nullable=False, default='normal')
+    status = Column(String(24), nullable=False, default='open', index=True)
+    assignee_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    due_date = Column(String(10), nullable=True)  # ISO date, Brisbane operational date
+    version = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+
+class WorkOrderEvent(Base):
+    __tablename__ = 'work_order_events'
+    id = Column(Integer, primary_key=True)
+    work_order_id = Column(Integer, ForeignKey('work_orders.id'), nullable=False, index=True)
+    token_digest = Column(String(64), nullable=False, unique=True)
+    actor = Column(String, nullable=False)
+    note = Column(String(1000), nullable=False)
+    snapshot = Column(Text, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class WorkOrderCheck(Base):
+    __tablename__ = 'work_order_checks'
+    id = Column(Integer, primary_key=True)
+    work_order_id = Column(Integer, ForeignKey('work_orders.id'), nullable=False, index=True)
+    label = Column(String(240), nullable=False)
+    required = Column(Boolean, nullable=False, default=True)
+    completed = Column(Boolean, nullable=False, default=False)
+    checked_by = Column(String, nullable=True)
+    checked_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
