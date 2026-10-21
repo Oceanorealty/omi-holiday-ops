@@ -1,0 +1,37 @@
+name: OPS release checks
+on:
+  push:
+    branches: [main, 'release/**']
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ops_test
+          POSTGRES_PASSWORD: synthetic-ci-only
+          POSTGRES_DB: ops_release_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd 'pg_isready -U ops_test -d ops_release_test'
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DATABASE_URL: 'sqlite:///:memory:'
+      OPS_TEST_POSTGRES_URL: 'postgresql://ops_test:synthetic-ci-only@127.0.0.1:5432/ops_release_test'
+      OPS_SCHEDULER_ENABLED: '0'
+      OPS_MESSAGE_DISPATCH_ENABLED: '0'
+      OPS_OWNER_EMAIL_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: python -m pip install -r requirements.txt pytest httpx
+      - run: python -m pytest -q tests
