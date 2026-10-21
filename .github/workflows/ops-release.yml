@@ -8,7 +8,7 @@ permissions:
   contents: read
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 12
     services:
       postgres:
@@ -19,7 +19,7 @@ jobs:
           POSTGRES_DB: ops_release_test
         ports: ['5432:5432']
         options: >-
-          --health-cmd 'pg_isready -U ops_test -d ops_release_test'
+          --health-cmd pg_isready
           --health-interval 5s --health-timeout 5s --health-retries 12
     env:
       DATABASE_URL: 'sqlite:///:memory:'
