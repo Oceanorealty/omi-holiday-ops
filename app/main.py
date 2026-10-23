@@ -98,6 +98,10 @@ app.include_router(channel_router)
 app.include_router(parity_router)
 app.include_router(task_router)
 app.include_router(operations_router)
+from app.public_booking import router as public_booking_router
+app.include_router(public_booking_router)
+from app.operations.payment_router import router as payment_router
+app.include_router(payment_router)
 app.include_router(public_router)
 app.add_middleware(SessionAuthMiddleware)
 
