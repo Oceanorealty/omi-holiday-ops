@@ -15,6 +15,7 @@
 - 新增接入检查页，区分“未连接”“有同步错误”“缺少具名员工”等情况。
 - 新增直接渠道页；实现Booking.com官方短期token认证与房型只读查询代码，已做合成契约测试，尚无真实账户连通验证。Airbnb/Expedia等待渠道资格及授权资料，没有猜测私有接口。
 - 新员工角色默认选择staff，导航与新表单适配窄屏。
+- 新增显式币种订单账本、费用/减免、外部收付款记录、余额、历史对账单和客人查询；重复交易参考号与超额退款拦截，更正保留凭证。没有实际扣款/退款、税务发票或自动业主结算。
 - 新增自有协议文本版本、按预订固定快照、门户姓名/时间确认、撤回重发、历史与下载；未接入外部身份核验或认证签署服务，不预填实际合同条款。
 - 新增显式共享资源/房型容量、整租分租联动，统一直订、来源同步和封锁的本地库存锁；满房日期才输出iCal。具体实体房间分配及跨OTA实时原子预留仍缺。
 - 新增不可变检查模板、固定天数周期计划、暂停/恢复/补生成，以及任务完成一次性生成费用。没有付款或员工通知。
@@ -58,7 +59,7 @@ Hostaway核对：使用官方公开资料，未登录付费账户逐屏复现。
 | F15 | 情绪与升级 | 未验证 | P1 | 负面/紧急会话分类、分配、时限、升级和人工接管可追踪 | 真实消息源与分类评估 | [官方资料](https://www.hostaway.com/features/hostaway-ai/) |
 | F16 | SMS / WhatsApp | 未发现实现 | P2 | SMS/WhatsApp双向会话、模板、语言、失败回执与退订状态 | 服务商账户、号码及模板授权 | [官方资料](https://www.hostaway.com/features/communication/) |
 | F17 | 评价自动化 | 部分已有 | P2 | 已有退房后评价邀请模板；补渠道评价导入、回复、排程与渠道规则 | 渠道评价API | [官方资料](https://www.hostaway.com/features/communication/) |
-| F18 | 客人门户 | 本批增加入住表单和门户会话 | P1 | 每单门户、在线到达资料、规则版本确认、客人与运营对话已实现；付款、协议、加购仍待做 | 支付/签署/加购模块 | [官方资料](https://support.hostaway.com/hc/en-us/articles/360036731213-Reservations-Guest-Portal) |
+| F18 | 客人门户 | 本批增加入住、会话、协议及账务查询 | P1 | 每单门户、在线到达资料、规则版本确认、会话、协议确认和外部收付款账务查询已实现；在线付款、加购及第三方身份核验待接 | 支付/签署/加购模块 | [官方资料](https://support.hostaway.com/hc/en-us/articles/360036731213-Reservations-Guest-Portal) |
 | F19 | 在线入住 | 本批本地已实现 | P2 | 每单到达资料、人数/格式校验、提交历史、日期/规则变化后重提、私密链接访问隔离；不等同实际入住或身份核验 | 表单存储与保留规则 | [官方资料](https://support.hostaway.com/hc/en-us/articles/17027928676123-Listings-Manage-the-Online-Check-In-Form) |
 | F20 | 租赁协议 | 本批本地协议确认已实现，身份核验待接 | P2 | 运营自有文本版本、按单不可变快照、姓名/时间/文档摘要确认、撤回/重发、历史与下载已实现；不是第三方身份核验或签署服务认证 | 电子签署方案与业务协议 | [官方资料](https://support.hostaway.com/hc/en-us/articles/6512180199451-Rental-Agreements-Overview-and-FAQs) |
 | F21 | 加购服务 | 未发现实现 | P2 | 可选服务、库存/时段、价格/税费、购买回执；付款后创建准备任务 | 支付服务及服务履约 | [官方资料](https://support.hostaway.com/hc/en-us/articles/6112311144219-Listings-Manage-Prices-Fees-and-Discounts) |
@@ -66,8 +67,8 @@ Hostaway核对：使用官方公开资料，未登录付费账户逐屏复现。
 | F23 | 直订结账 | 未发现完整实现 | P0 | 结账接受报价、短时库存保留、付款回调和确认订单；重复回调不重复建单 | 支付账户与库存事务 | [官方资料](https://www.hostaway.com/features/direct-booking/) |
 | F24 | 优惠与营销 | 部分已有 | P2 | 已有停用的再营销模板；补优惠券限制、有效期、使用次数、营销同意和退订 | 直订/消息模块 | [官方资料](https://www.hostaway.com/features/direct-booking/) |
 | F25 | 付款自动化 | 未发现实现 | P1 | 费用计划、分期、尾款、支付回调与取消后的停止扣款 | 支付账户与业务扣款规则 | [官方资料](https://www.hostaway.com/features/operations/) |
-| F26 | 付款异常 | 未发现实现 | P1 | 失败、待处理、成功、退款、争议状态来自提供商；未知状态不当已付款 | 支付事件接口 | [官方资料](https://support.hostaway.com/hc/en-us/articles/360047273714-Settings-Notifications) |
-| F27 | 发票与收据 | 未发现实现 | P2 | 每单费用明细发票与每笔付款收据；税费与付款状态一致 | 费用模型与发票编号策略 | [官方资料](https://www.hostaway.com/features/operations/) |
+| F26 | 付款异常 | 本批人工外部收付款记录已实现，支付事件待接 | P1 | 明确币种、费用/减免/外部收款/外部退款、未付/部分付/余额状态及更正历史已实现；未接提供商成功/失败/争议事件 | 支付事件接口 | [官方资料](https://support.hostaway.com/hc/en-us/articles/360047273714-Settings-Notifications) |
+| F27 | 发票与收据 | 本批固定对账单和外部收付款记录已实现 | P2 | 按订单固定历史对账单、逐笔收付款记录、快照摘要校验和作废标记已实现；税务发票、电子发票及税率编号合规待做 | 费用模型与发票编号策略 | [官方资料](https://www.hostaway.com/features/operations/) |
 | F28 | 清洁派单 | 部分已有，本批联动 | P0 | 已有退房派单；本批直订改期保留锁定/完成任务并提示复核，取消保留任务历史 | 后续需员工通知与外勤权限 | [官方资料](https://support.hostaway.com/hc/en-us/articles/360036506093-Tasks-Create-Manage-Assign-Tasks) |
 | F29 | 检查清单 | 本批增加不可变模板 | P1 | 必做/选做检查项、不可变可复用模板及任务/计划快照已实现；附件照片和清洁外勤门户联动待做 | 文件存储与模板模型 | [官方资料](https://support.hostaway.com/hc/en-us/articles/360036506093-Tasks-Create-Manage-Assign-Tasks) |
 | F30 | 维修和周期任务 | 本批增加固定日间隔周期计划 | P1 | 周期派单、暂停/恢复、补生成、去重和历史保留已实现；月历规则、通知与可靠外部调度待做 | 可靠的后台执行环境 | [官方资料](https://support.hostaway.com/hc/en-us/articles/18693666619163-Tasks-Recurring-Tasks) |
@@ -87,10 +88,10 @@ Hostaway核对：使用官方公开资料，未登录付费账户逐屏复现。
 | F44 | 保险等服务 | 未实接 | P3 | 按适用地区显示真实承保/理赔/服务状态；不将普通表单当有效保单 | 服务商资格、地区及业务合同 | [官方资料](https://support.hostaway.com/hc/en-us/categories/360000589513-Using-Hostaway) |
 | F45 | 按日期批量房价 | 本批本地已实现 | P1 | 批量设置和恢复默认；回显覆盖范围，保存历史并拒绝旧版本覆盖 | 渠道发布未连接 | [官方资料](https://support.hostaway.com/hc/en-us/categories/360000589513-Using-Hostaway) |
 | F46 | 定价上下限 | 本批本地已实现 | P1 | 按物业最低/最高价、签名审计、旧版本拒绝；最终报价夹取，覆盖价在界面明确为上下限前值 | 本地定价策略 | [官方资料](https://support.hostaway.com/hc/en-us/categories/360000589513-Using-Hostaway) |
-| F47 | 客人付款状态和余额 | 未发现实现 | P0 | 区分未付/部分付/已付/未知；金额调整后余额正确 | 支付流水和费用明细 | [官方资料](https://support.hostaway.com/hc/en-us/articles/14677408175131-Guest-Payments-Overview-Management) |
+| F47 | 客人付款状态和余额 | 本批本地人工账务已实现 | P0 | 显式选择币种、精确小数费用/减免、外部收款/退款、余额和客人查询已实现；不替代支付提供商确认、汇兑或跨订单拆分 | 支付流水和费用明细 | [官方资料](https://support.hostaway.com/hc/en-us/articles/14677408175131-Guest-Payments-Overview-Management) |
 | F48 | 分期与动态尾款 | 未发现实现 | P1 | 支持预订时比例付款及入住前剩余尾款；改价/线下付款后重新计算 | 支付授权与调度 | [官方资料](https://support.hostaway.com/hc/en-us/articles/14677408175131-Guest-Payments-Overview-Management) |
 | F49 | 押金预授权与释放 | 未发现实现 | P1 | 按入住日期授权、到期释放、取消清理，显示提供商回执 | 支持预授权的支付提供商 | [官方资料](https://support.hostaway.com/hc/en-us/articles/14677408175131-Guest-Payments-Overview-Management) |
-| F50 | 退款与拒付处理 | 未发现实现 | P1 | 部分退款、全额退款、争议生命周期与账务状态可追溯 | 支付提供商与退款流程 | [官方资料](https://support.hostaway.com/hc/en-us/articles/14677408175131-Guest-Payments-Overview-Management) |
+| F50 | 退款与拒付处理 | 本批外部退款记账已实现，实际退款/拒付待接 | P1 | 退款绑定本单有效收款、累计不超过原收款、更正保留原凭证及并发保护已实现；实际转账、拒付与提供商回执待接 | 支付提供商与退款流程 | [官方资料](https://support.hostaway.com/hc/en-us/articles/14677408175131-Guest-Payments-Overview-Management) |
 | F51 | 电子发票与地区接口 | 未发现实现 | P3 | 按适用地区验证发票字段、编号、税率及提供商结果 | 地区需求与电子发票服务 | [官方资料](https://support.hostaway.com/hc/en-us/categories/360000589513-Using-Hostaway) |
 | F52 | QuickBooks会计集成 | 未实接 | P2 | 费用/订单/收款映射、外部ID去重、同步错误和复核记录 | QuickBooks账户与会计科目 | [官方资料](https://support.hostaway.com/hc/en-us/categories/360000589513-Using-Hostaway) |
 | F53 | 双因素认证 | 未发现实现 | P1 | 具名员工登录支持2FA设置和恢复；会话与账户状态一致 | 身份验证与恢复策略 | [官方资料](https://support.hostaway.com/hc/en-us/categories/360000589513-Using-Hostaway) |
