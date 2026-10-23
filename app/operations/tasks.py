@@ -77,7 +77,14 @@ def save_task(db, *, actor, entity_id, token, property_id, title, description, c
         if reset_checks:
             for check in checks:
                 check.completed=False;check.checked_by=None;check.checked_at=None
+        if status == 'done':
+            from app.operations.task_plans import generate_task_expense
+            db.flush()
+            db.refresh(row)
+            values['expense_id'] = generate_task_expense(db, row)
         snapshot={k:values[k] for k in FIELDS}
+        if status == 'done':
+            snapshot['expense_id'] = values['expense_id']
         snapshot['checklist']=checklist_snapshot(checks)
         db.add(WorkOrderEvent(work_order_id=entity_id,token_digest=hashlib.sha256(token.encode()).hexdigest(),
             actor=actor,note=note,snapshot=json.dumps(snapshot,sort_keys=True)))
