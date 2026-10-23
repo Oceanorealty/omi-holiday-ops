@@ -114,7 +114,7 @@ from app.main import app
 from app.auth import SESSION_COOKIE,make_session_cookie
 with TestClient(app) as c:
  c.cookies.set(SESSION_COOKIE,make_session_cookie('release-admin'))
- for path in ['/healthz','/','/transactions','/cleaning','/operations','/operations/calendar','/operations/tasks','/operations/readiness','/operations/setup','/operations/reservations','/operations/inventory','/operations/reports','/operations/channels','/operations/task-plans','/operations/guest-checkins','/operations/guest-access','/operations/calendar-notes','/operations/time-report','/operations/calendar-period','/operations/custom-fields','/operations/registration-settings','/operations/booking-windows','/operations/reservation-requests','/operations/resources','/operations/inbox','/operations/agreements','/operations/accounts']:
+ for path in ['/healthz','/','/transactions','/cleaning','/operations','/operations/calendar','/operations/tasks','/operations/readiness','/operations/setup','/operations/reservations','/operations/inventory','/operations/reports','/operations/channels','/operations/task-plans','/operations/guest-checkins','/operations/guest-access','/operations/calendar-notes','/operations/time-report','/operations/calendar-period','/operations/custom-fields','/operations/custom-fields/search','/operations/custom-fields/import','/operations/registration-settings','/operations/booking-windows','/operations/reservation-requests','/operations/resources','/operations/inbox','/operations/agreements','/operations/accounts']:
   response=c.get(path)
   assert response.status_code==200,(path,response.status_code)
   assert 'no-store' in response.headers['Cache-Control']
@@ -384,3 +384,35 @@ def test_postgres_registration_concurrent_submissions(pg):
     with Session(engine) as s:
         assert s.get(GuestRegistration,id).version==1
         assert s.query(GuestRegistrationEvent).count()==1
+
+
+def test_postgres_custom_field_import_atomic_concurrency_and_literal_search(pg):
+    from app.models import CustomFieldValue,OpsCommand
+    from app.operations.custom_fields import create_definition
+    from app.operations.custom_field_import import preview_import,apply_import
+    from app.operations.custom_field_search import search_page
+    engine,_,_=pg;Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        properties=[Property(name='Synthetic import first'),Property(name='Synthetic import second')];s.add_all(properties);s.commit()
+        ids=[p.id for p in properties]
+        create_definition(s,actor='reviewer',token=form_token('reviewer',purpose='custom-field-create'),scope='property',key='imported',label='Imported',kind='text',options='',note='Synthetic batch field definition')
+        plans=[]
+        for value in ['Literal 100%_A','Second value']:
+            content=('record_type,record_id,field_key,value\n'+''.join(f'property,{id},imported,{value}\n' for id in ids)).encode()
+            plans.append(preview_import(s,'reviewer',content))
+    barrier=threading.Barrier(2)
+    def competing(plan):
+        with Session(engine) as s:
+            barrier.wait(timeout=5)
+            try:
+                apply_import(s,actor='reviewer',plan=plan['plan'],token=plan['token'],note='Reviewed synthetic concurrent batch')
+                return 'saved'
+            except TaskError:return 'stale'
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(competing,plans))==['saved','stale']
+    with Session(engine) as s:
+        rows=s.query(CustomFieldValue).all();assert len(rows)==2 and len({r.value for r in rows})==1
+        assert s.query(OpsCommand).filter_by(purpose='custom-import').count()==1
+        if rows[0].value=='Literal 100%_A':
+            assert len(search_page(s,scope='property',needle='100%_A')['rows'])==2
+            assert search_page(s,scope='property',needle='100%_a')['rows']==[]
