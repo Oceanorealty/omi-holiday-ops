@@ -77,12 +77,17 @@ def save_task(db, *, actor, entity_id, token, property_id, title, description, c
         if reset_checks:
             for check in checks:
                 check.completed=False;check.checked_by=None;check.checked_at=None
+        stopped_timers=[]
+        if row and (status!='in_progress' or row.assignee_id!=assignee_id):
+            from app.operations.task_time import close_task_timers
+            stopped_timers=close_task_timers(db,entity_id,datetime.utcnow())
         if status == 'done':
             from app.operations.task_plans import generate_task_expense
             db.flush()
             db.refresh(row)
             values['expense_id'] = generate_task_expense(db, row)
         snapshot={k:values[k] for k in FIELDS}
+        snapshot['stopped_timer_ids']=stopped_timers
         if status == 'done':
             snapshot['expense_id'] = values['expense_id']
         snapshot['checklist']=checklist_snapshot(checks)

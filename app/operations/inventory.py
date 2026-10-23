@@ -83,7 +83,11 @@ def save_inventory(db, *, actor, property_id, start, end, token, nightly_rate=''
         raise
 
 
-def restriction_reason(db, property_id, start: date, end: date):
+def restriction_reason(db, property_id, start: date, end: date, *, check_window=True):
+    if check_window:
+        from app.operations.booking_windows import window_reason
+        reason=window_reason(db,property_id,start)
+        if reason:return reason
     rows = db.query(InventoryDay).filter(InventoryDay.property_id == property_id,
         InventoryDay.night >= start.isoformat(), InventoryDay.night <= end.isoformat()).all()
     nights = (end-start).days

@@ -35,7 +35,10 @@ def task_list(request: Request, status: str='active', property_id: str='', db=De
 def task_detail(entity_id: int, request: Request, db=Depends(get_db), admin=Depends(require_admin)):
     task=db.get(WorkOrder,entity_id)
     if not task: raise HTTPException(404,'Task not found')
+    from app.operations.task_time import task_time_context
+    from app.operations.task_attachments import attachment_context
     return templates.TemplateResponse(request=request,name='operations_task_detail.html',context={
+        **task_time_context(db,admin,task), **attachment_context(db,admin,task),
         'checklist_templates':db.query(ChecklistTemplate).order_by(ChecklistTemplate.name).all(),
         'template_token':form_token(admin,task,purpose='template-apply'),
         'cost_token':form_token(admin,task,purpose='task-cost'),
