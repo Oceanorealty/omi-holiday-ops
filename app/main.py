@@ -52,7 +52,7 @@ from app.sync.ical_export import build_ics
 from app.sync.ical_sync import recompute_conflicts, sync_all, sync_feed
 
 from app.deployment import ensure_release_snapshot
-_release_snapshot = ensure_release_snapshot(engine)
+_release_snapshot = ensure_release_snapshot(engine, snapshot_schema='ops_backup_20261023')
 print(f"OPS_RELEASE_SNAPSHOT state={_release_snapshot['state']} tables={_release_snapshot['tables']}", flush=True)
 migrate.run(engine)
 Base.metadata.create_all(bind=engine)
@@ -62,6 +62,24 @@ with SessionLocal() as _db:
 
 app = FastAPI(title="Omi Holiday — Operations")
 from app.operations.task_router import router as task_router
+from app.operations.parity_router import router as parity_router
+from app.operations.channel_router import router as channel_router
+from app.operations.task_plan_router import router as task_plan_router
+from app.operations.guest_checkin_router import router as guest_checkin_router
+from app.operations.inbox_router import router as inbox_router
+from app.operations.agreement_router import router as agreement_router
+from app.operations.billing_router import router as billing_router
+from app.operations.reservation_request_router import router as reservation_request_router
+from app.operations.stock_router import router as stock_router
+app.include_router(stock_router)
+app.include_router(reservation_request_router)
+app.include_router(guest_checkin_router)
+app.include_router(inbox_router)
+app.include_router(agreement_router)
+app.include_router(billing_router)
+app.include_router(task_plan_router)
+app.include_router(channel_router)
+app.include_router(parity_router)
 app.include_router(task_router)
 app.include_router(operations_router)
 app.include_router(public_router)
@@ -82,7 +100,7 @@ async def prevent_private_page_caching(request: Request, call_next):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://omiholiday.com", "https://www.omiholiday.com"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 templates = Jinja2Templates(directory="app/templates")
@@ -94,6 +112,8 @@ def _scheduled_sync():
     try:
         sync_all(db)
         sync_cleaning_tasks(db)
+        from app.operations.task_plans import materialize_schedules
+        materialize_schedules(db)
         process_due_messages(db)
         send_owner_reports(db)
     finally:
@@ -120,7 +140,7 @@ def stop_scheduler():
 def healthz():
     # Render calls this frequently. Keep liveness cheap so it does not keep
     # a scale-to-zero database awake around the clock.
-    return {"status": "ok", "release": "ops-20261021"}
+    return {"status": "ok", "release": "ops-parity-20261023"}
 
 
 @app.get("/operations/readiness")
@@ -230,6 +250,8 @@ def trigger_sync():
     try:
         sync_all(db)
         sync_cleaning_tasks(db)
+        from app.operations.task_plans import materialize_schedules
+        materialize_schedules(db)
         process_due_messages(db)
         send_owner_reports(db)
     finally:
@@ -241,6 +263,8 @@ def trigger_sync():
 def update_booking_amount(booking_id: int, amount: str = Form("")):
     db = SessionLocal()
     try:
+        from app.operations.stock import lock_stock
+        lock_stock(db)
         booking = db.get(Booking, booking_id)
         if booking:
             try:
@@ -270,6 +294,8 @@ def update_door_code(booking_id: int, door_code: str = Form("")):
 def update_guest(booking_id: int, name: str = Form(""), email: str = Form(""), language: str = Form("en")):
     db = SessionLocal()
     try:
+        from app.operations.stock import lock_stock
+        lock_stock(db)
         booking = db.get(Booking, booking_id)
         if booking:
             if not booking.guest:
@@ -751,19 +777,25 @@ def delete_feed(feed_id: int):
 def create_block(property_id: int, start_date: str = Form(...), end_date: str = Form(...), note: str = Form("")):
     db = SessionLocal()
     try:
+        from app.operations.stock import lock_stock,refresh_conflicts
+        from app.operations.reservations import stay_dates
+        lock_stock(db)
+        if not db.get(Property,property_id):raise HTTPException(404,'Property not found')
+        try:start,end=stay_dates(start_date,end_date)
+        except ValueError as exc:raise HTTPException(422,str(exc)) from None
         block = Booking(
             property_id=property_id,
             platform=PlatformName.other,
             uid=f"block-{uuid.uuid4()}",
             summary=note or "Blocked",
-            check_in=datetime.strptime(start_date, "%Y-%m-%d"),
-            check_out=datetime.strptime(end_date, "%Y-%m-%d"),
+            check_in=start,
+            check_out=end,
             status=BookingStatus.confirmed,
             is_block=True,
         )
         db.add(block)
+        refresh_conflicts(db)
         db.commit()
-        recompute_conflicts(db)
     finally:
         db.close()
     return RedirectResponse(url="/properties", status_code=303)
@@ -773,11 +805,13 @@ def create_block(property_id: int, start_date: str = Form(...), end_date: str = 
 def delete_block(booking_id: int):
     db = SessionLocal()
     try:
+        from app.operations.stock import lock_stock,refresh_conflicts
+        lock_stock(db)
         booking = db.get(Booking, booking_id)
         if booking and booking.is_block:
-            db.delete(booking)
+            booking.status=BookingStatus.cancelled
+            refresh_conflicts(db)
             db.commit()
-            recompute_conflicts(db)
     finally:
         db.close()
     return RedirectResponse(url="/properties", status_code=303)
@@ -790,8 +824,10 @@ def property_ical_export(property_id: int, token: str):
         prop = db.get(Property, property_id)
         if not prop or not prop.ical_export_token or prop.ical_export_token != token:
             return Response(status_code=404)
-        bookings = db.query(Booking).filter(Booking.property_id == property_id).all()
-        return Response(content=build_ics(bookings), media_type="text/calendar")
+        from app.sync.ical_export import build_resource_ics
+        try:content=build_resource_ics(db,property_id)
+        except ValueError:return Response(status_code=503,headers={'Retry-After':'60'})
+        return Response(content=content, media_type="text/calendar")
     finally:
         db.close()
 
@@ -1116,6 +1152,9 @@ def create_expense(
 def delete_expense(expense_id: int):
     db = SessionLocal()
     try:
+        from app.models import WorkOrderCost
+        if db.query(WorkOrderCost).filter_by(expense_id=expense_id).first():
+            raise HTTPException(409, 'Task-generated expenses retain their history; record a reviewed accounting adjustment instead')
         expense = db.get(Expense, expense_id)
         if expense:
             db.delete(expense)
@@ -1183,18 +1222,6 @@ def finalize_owner_statement(statement_id: int):
     finally:
         db.close()
     return RedirectResponse(url="/transactions", status_code=303)
-
-
-@app.get("/guest/{token}")
-def guest_portal(request: Request, token: str):
-    db = SessionLocal()
-    try:
-        booking = db.query(Booking).filter(Booking.guest_portal_token == token).first()
-        return templates.TemplateResponse(
-            "guest_portal.html", {"request": request, "booking": booking}
-        )
-    finally:
-        db.close()
 
 
 @app.get("/owner/{token}")

@@ -57,7 +57,8 @@ body {
   text-transform: uppercase;
   color: var(--gold);
 }
-nav { display: flex; gap: 4px; flex: 1; justify-content: center; }
+nav { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; justify-content: center; }
+.topbar { gap: 18px; }
 
 .logout-btn {
   background: transparent;
@@ -347,3 +348,10 @@ select {
   font: inherit; background: var(--cream); color: var(--charcoal);
 }
 .ops-task-form .btn { justify-self: start; }
+.form-row > label { display: flex; flex-direction: column; gap: 5px; font-size: 14px; min-width: 0; }
+.form-row > label > textarea { min-height: 90px; max-width: 100%; }
+@media (max-width: 560px) {
+  .form-row > label { width: 100%; }
+  .form-row > label > input, .form-row > label > select { width: 100%; box-sizing: border-box; }
+  .form-row > label > input[type="checkbox"] { width: auto; align-self: flex-start; }
+}

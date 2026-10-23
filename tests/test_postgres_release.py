@@ -114,7 +114,7 @@ from app.main import app
 from app.auth import SESSION_COOKIE,make_session_cookie
 with TestClient(app) as c:
  c.cookies.set(SESSION_COOKIE,make_session_cookie('release-admin'))
- for path in ['/healthz','/','/transactions','/cleaning','/operations','/operations/calendar','/operations/tasks','/operations/readiness']:
+ for path in ['/healthz','/','/transactions','/cleaning','/operations','/operations/calendar','/operations/tasks','/operations/readiness','/operations/setup','/operations/reservations','/operations/inventory','/operations/reports','/operations/channels','/operations/task-plans','/operations/guest-checkins','/operations/reservation-requests','/operations/resources','/operations/inbox','/operations/agreements','/operations/accounts']:
   response=c.get(path)
   assert response.status_code==200,(path,response.status_code)
   assert 'no-store' in response.headers['Cache-Control']
@@ -122,3 +122,152 @@ with TestClient(app) as c:
 '''
     result=subprocess.run([sys.executable,'-c',script],env=env,capture_output=True,text=True,timeout=35)
     assert result.returncode==0,result.stderr[-2000:]
+
+
+def test_postgres_new_release_snapshot_and_reservation_serialization(pg):
+    from app.operations.reservations import reservation_token, save_reservation
+    engine, schema, _ = pg
+    base_schema(engine)
+    ensure_release_snapshot(engine)
+    current = ensure_release_snapshot(engine, snapshot_schema='ops_backup_20261023')
+    assert current['state'] == 'saved'
+    assert ensure_release_snapshot(engine, snapshot_schema='ops_backup_20261023')['state'] == 'already_saved'
+    migrate.run(engine)
+    Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        property_id = s.query(Property).one().id
+    barrier = threading.Barrier(2)
+    def competing(_):
+        with Session(engine) as s:
+            token = reservation_token('reviewer')
+            barrier.wait(timeout=5)
+            try:
+                save_reservation(s, actor='reviewer', entity_id=0, token=token, property_id=property_id,
+                    check_in='2026-11-10', check_out='2026-11-12', amount='200',
+                    note='Reviewed disposable PostgreSQL reservation')
+                return 'saved'
+            except TaskError:
+                return 'held'
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(competing, range(2))) == ['held', 'saved']
+    with Session(engine) as s:
+        assert s.query(Booking).count() == 2
+    with engine.connect() as c:
+        count = c.execute(text(f'SELECT count(*) FROM ops_backup_20261023.{schema}__bookings')).scalar_one()
+        assert count == 1
+
+
+def test_postgres_shared_inventory_and_recurring_plan_concurrency(pg,monkeypatch):
+    from datetime import date,timedelta
+    from app.models import ChecklistTemplate,ScheduledTaskOccurrence,StockResource
+    from app.operations.stock import config_token,configure_stock
+    from app.operations.reservations import reservation_token,save_reservation
+    from app.operations import task_plans
+    engine,_,_=pg;Base.metadata.create_all(engine)
+    monkeypatch.setattr(task_plans,'today',lambda:date(2026,10,23))
+    with Session(engine) as s:
+        p=Property(name='Synthetic A',time_zone='Australia/Brisbane');q=Property(name='Synthetic B',time_zone='Australia/Brisbane')
+        s.add_all([p,q]);s.commit();ids=[p.id,q.id]
+        configure_stock(s,actor='reviewer',token=config_token(s,'reviewer'),action='create',name='One shared unit',capacity=1,time_zone='Australia/Brisbane',note='Confirmed shared physical room mapping')
+        resource_id=s.query(StockResource).one().id
+        for property_id in ids:
+            configure_stock(s,actor='reviewer',token=config_token(s,'reviewer'),action='bind',property_id=property_id,resource_id=resource_id,note='Confirmed listing uses the shared room')
+        template_id=task_plans.create_template(s,actor='reviewer',token=form_token('reviewer',purpose='template-create'),name='Inspection',lines='Check smoke detector',note='Create synthetic PostgreSQL inspection template')
+        task_plans.create_schedule(s,actor='reviewer',token=form_token('reviewer',purpose='schedule-create'),property_id=ids[0],title='Inspect unit',description='',category='inspection',priority='normal',interval_days=7,start_date='2026-10-23',template_id=template_id,note='Create recurring PostgreSQL inspection schedule')
+    barrier=threading.Barrier(2)
+    def reserve(property_id):
+        with Session(engine) as s:
+            token=reservation_token('reviewer');barrier.wait(timeout=5)
+            try:
+                save_reservation(s,actor='reviewer',entity_id=0,token=token,property_id=property_id,check_in='2026-11-10',check_out='2026-11-12',amount='200',note='Book last shared room using synthetic data')
+                return 'saved'
+            except TaskError:return 'held'
+    with ThreadPoolExecutor(max_workers=2) as pool:assert sorted(pool.map(reserve,ids))==['held','saved']
+    def generate(_):
+        with Session(engine) as s:return task_plans.materialize_schedules(s,date(2026,11,6))['generated']
+    with ThreadPoolExecutor(max_workers=2) as pool:assert sum(pool.map(generate,range(2)))==3
+    with Session(engine) as s:
+        assert s.query(Booking).count()==1 and s.query(ScheduledTaskOccurrence).count()==3
+
+
+def test_postgres_portal_concurrent_retry_creates_one_conversation_and_message(pg):
+    from datetime import timedelta
+    from app.models import PortalConversation,PortalMessage
+    from app.operations.inbox import message_token,post_message
+    engine,_,_=pg;Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        p=Property(name='Synthetic inbox property');s.add(p);s.flush()
+        start=datetime.utcnow()+timedelta(days=7)
+        b=Booking(property_id=p.id,platform='direct',uid='synthetic-inbox',check_in=start,check_out=start+timedelta(days=2),status='confirmed')
+        s.add(b);s.commit();booking_id=b.id;token=message_token('reviewer',b)
+    barrier=threading.Barrier(2)
+    def post(_):
+        with Session(engine) as s:
+            barrier.wait(timeout=5)
+            return post_message(s,actor='reviewer',booking_id=booking_id,token=token,kind='reply',body='One synthetic portal reply')
+    with ThreadPoolExecutor(max_workers=2) as pool:assert len(set(pool.map(post,range(2))))==1
+    with Session(engine) as s:assert s.query(PortalConversation).count()==s.query(PortalMessage).count()==1
+
+
+def test_postgres_agreement_acknowledgement_retry_is_atomic(pg):
+    from datetime import timedelta
+    from app.models import AgreementAcceptance,BookingAgreement
+    from app.operations.agreements import (accept_agreement,acceptance_token,create_version,
+        issue_agreement,issue_token,policy_token)
+    engine,_,_=pg;Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        p=Property(name='Synthetic agreement property');s.add(p);s.flush()
+        start=datetime.utcnow()+timedelta(days=7)
+        b=Booking(property_id=p.id,platform='direct',uid='synthetic-agreement',check_in=start,
+            check_out=start+timedelta(days=2),status='confirmed',guest_portal_token='synthetic-pg-agreement-link')
+        s.add(b);s.commit()
+        create_version(s,actor='reviewer',property_id=p.id,token=policy_token(s,'reviewer',p.id),
+            title='Synthetic demonstration',body='Synthetic non-binding document for a database test only.',note='Prepare synthetic PostgreSQL agreement')
+        entity_id=issue_agreement(s,actor='reviewer',booking_id=b.id,token=issue_token(s,'reviewer',b),note='Issue synthetic PostgreSQL agreement')
+        token=acceptance_token(b,s.get(BookingAgreement,entity_id))
+    barrier=threading.Barrier(2)
+    def acknowledge(_):
+        with Session(engine) as s:
+            barrier.wait(timeout=5)
+            return accept_agreement(s,portal_token='synthetic-pg-agreement-link',agreement_id=entity_id,
+                token=token,typed_name='Synthetic holder',acknowledged=True)
+    with ThreadPoolExecutor(max_workers=2) as pool:assert len(set(pool.map(acknowledge,range(2))))==1
+    with Session(engine) as s:assert s.query(AgreementAcceptance).count()==1
+
+
+def test_postgres_global_payment_reference_and_refund_concurrency(pg):
+    from datetime import timedelta
+    from app.models import BookingAccount,BookingLedgerEntry
+    from app.operations.billing import account_token,add_entry,create_account,create_token,entries,totals
+    engine,_,_=pg;Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        p=Property(name='Synthetic billing property');s.add(p);s.flush()
+        start=datetime.utcnow()+timedelta(days=7)
+        stays=[Booking(property_id=p.id,platform='direct',uid=f'synthetic-billing-{i}',check_in=start,
+            check_out=start+timedelta(days=2),status='confirmed') for i in range(2)]
+        s.add_all(stays);s.commit();ids=[b.id for b in stays]
+        for b in stays:create_account(s,actor='reviewer',booking_id=b.id,token=create_token('reviewer',b),currency='AUD',opening_amount='300',note='Confirmed synthetic currency and opening amount')
+    barrier=threading.Barrier(2)
+    def payment(booking_id):
+        with Session(engine) as s:
+            token=account_token('reviewer',s.get(BookingAccount,booking_id));barrier.wait(timeout=5)
+            try:
+                entity_id=add_entry(s,actor='reviewer',booking_id=booking_id,token=token,kind='payment',amount='100',description='Synthetic payment',
+                    occurred_on=datetime.utcnow().date().isoformat(),reference='globally-unique-synthetic-ref',note='Verified synthetic external receipt')
+                return booking_id,entity_id
+            except TaskError:return None
+    with ThreadPoolExecutor(max_workers=2) as pool:results=list(pool.map(payment,ids))
+    saved=[r for r in results if r];assert len(saved)==1
+    booking_id,payment_id=saved[0];barrier=threading.Barrier(2)
+    def refund(i):
+        with Session(engine) as s:
+            token=account_token('reviewer',s.get(BookingAccount,booking_id));barrier.wait(timeout=5)
+            try:
+                add_entry(s,actor='reviewer',booking_id=booking_id,token=token,kind='refund',amount='60',description='Synthetic refund',
+                    occurred_on=datetime.utcnow().date().isoformat(),reference=f'synthetic-refund-{i}',payment_id=payment_id,note='Verified synthetic external refund')
+                return 'saved'
+            except TaskError:return 'held'
+    with ThreadPoolExecutor(max_workers=2) as pool:assert sorted(pool.map(refund,range(2)))==['held','saved']
+    with Session(engine) as s:
+        assert s.query(BookingLedgerEntry).filter_by(kind='payment').count()==1
+        assert totals(entries(s,booking_id))['refunds']==60

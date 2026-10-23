@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=ops-checklists-20261021" />
+  <link rel="stylesheet" href="/static/style.css?v=ops-parity-20261023" />
 </head>
 <body>
   <header class="topbar">
@@ -18,7 +18,19 @@
     <input type="checkbox" id="nav-toggle" class="nav-toggle" />
     <label for="nav-toggle" class="nav-toggle-btn" aria-label="Menu"><span></span><span></span><span></span></label>
     <nav>
+      <a href="/operations/setup" class="{{ 'active' if request.url.path == '/operations/setup' else '' }}">Setup</a>
+      <a href="/operations/channels" class="{{ 'active' if request.url.path == '/operations/channels' else '' }}">Channels</a>
+      <a href="/operations/reservations" class="{{ 'active' if request.url.path.startswith('/operations/reservations') else '' }}">Reservations</a>
+      <a href="/operations/reservation-requests" class="{{ 'active' if request.url.path == '/operations/reservation-requests' else '' }}">Requests</a>
+      <a href="/operations/inventory" class="{{ 'active' if request.url.path == '/operations/inventory' else '' }}">Rates & restrictions</a>
+      <a href="/operations/resources" class="{{ 'active' if request.url.path == '/operations/resources' else '' }}">Shared inventory</a>
+      <a href="/operations/reports" class="{{ 'active' if request.url.path == '/operations/reports' else '' }}">Reports</a>
       <a href="/operations/tasks" class="{{ 'active' if request.url.path.startswith('/operations/tasks') else '' }}">Tasks</a>
+      <a href="/operations/task-plans" class="{{ 'active' if request.url.path == '/operations/task-plans' else '' }}">Task plans</a>
+      <a href="/operations/guest-checkins" class="{{ 'active' if request.url.path == '/operations/guest-checkins' else '' }}">Guest arrivals</a>
+      <a href="/operations/inbox" class="{{ 'active' if request.url.path.startswith('/operations/inbox') else '' }}">Portal inbox</a>
+      <a href="/operations/agreements" class="{{ 'active' if request.url.path.startswith('/operations/agreements') else '' }}">Agreements</a>
+      <a href="/operations/accounts" class="{{ 'active' if request.url.path.startswith('/operations/accounts') else '' }}">Booking accounts</a>
       <a href="/operations/calendar" class="{{ 'active' if request.url.path == '/operations/calendar' else '' }}">Calendar</a>
       <a href="/operations" class="{{ 'active' if request.url.path == '/operations' else '' }}">Overview</a>
       <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">Bookings</a>

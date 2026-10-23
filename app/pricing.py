@@ -14,10 +14,11 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
-from app.models import PriceRule, PriceRuleType, Property
+from app.models import InventoryDay, PriceRule, PriceRuleType, PricingLimit, Property
 
 
 def _rule_matches(rule: PriceRule, target: date, today: date) -> bool:
@@ -42,9 +43,10 @@ def _rule_matches(rule: PriceRule, target: date, today: date) -> bool:
 def suggested_price(db: Session, prop: Property, target: date, today: date | None = None) -> Decimal | None:
     """Returns the suggested nightly rate for `prop` on `target` night, or
     None if the property has no base rate set."""
-    if prop.base_nightly_rate is None:
+    override = db.query(InventoryDay).filter_by(property_id=prop.id, night=target.isoformat()).first()
+    if prop.base_nightly_rate is None and not (override and override.nightly_rate is not None):
         return None
-    today = today or datetime.utcnow().date()
+    today = today or datetime.now(ZoneInfo(prop.time_zone)).date()
 
     rules = (
         db.query(PriceRule)
@@ -55,11 +57,16 @@ def suggested_price(db: Session, prop: Property, target: date, today: date | Non
         .all()
     )
 
-    price = prop.base_nightly_rate
-    for rule in rules:
-        if _rule_matches(rule, target, today):
-            price = (price * rule.multiplier).quantize(Decimal("0.01"))
-    return price
+    price = override.nightly_rate if override and override.nightly_rate is not None else prop.base_nightly_rate
+    if not (override and override.nightly_rate is not None) and prop.pricing_mode == 'dynamic':
+        for rule in rules:
+            if _rule_matches(rule, target, today):
+                price = (price * rule.multiplier).quantize(Decimal("0.01"))
+    limits = db.get(PricingLimit,prop.id)
+    if limits:
+        if limits.minimum_rate is not None:price=max(price,limits.minimum_rate)
+        if limits.maximum_rate is not None:price=min(price,limits.maximum_rate)
+    return price.quantize(Decimal('.01'))
 
 
 def price_breakdown(db: Session, prop: Property, check_in: date, check_out: date) -> list[dict]:

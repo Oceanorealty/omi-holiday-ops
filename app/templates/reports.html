@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Reports — Omi Holiday{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Property reports</h1></div>
+<section class="card"><form method="get" class="form-row">
+<label>Property <select name="property_id"><option value="">All properties</option>{% for p in properties %}<option value="{{ p.id }}" {% if p.id == selected_property_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label>
+<label>First night <input type="date" name="start" value="{{ start }}" required></label><label>End date (excluded) <input type="date" name="end" value="{{ end }}" required></label><button class="btn">Show report</button></form>
+<a href="/operations/reports.csv?start={{ start }}&end={{ end }}{% if selected_property_id %}&property_id={{ selected_property_id }}{% endif %}">Download CSV</a></section>
+<section class="card"><h2>Reservations and booking value</h2>
+<p>Booking value is allocated evenly over the reservation's nights and rounded after summing. It is not bank receipts or accommodation-only revenue. Legacy amounts are assumed AUD because the current booking model has no currency field. Check currency before financial use. Reports cover up to 62 nights.</p>
+<div class="table-wrap"><table class="table small"><thead><tr><th>Property</th><th>Reserved nights</th><th>Blocked</th><th>Sellable</th><th>Reserved-night ratio</th><th>Known allocated booking value</th><th>Data quality</th><th>Channel nights</th></tr></thead><tbody>
+{% for row in rows %}<tr><td>{{ row.name }}</td><td>{{ row.reserved_nights }}</td><td>{{ row.blocked_nights }}</td><td>{{ row.sellable_nights }}</td><td>{{ (row.reserved_night_pct|string + '%') if row.reserved_night_pct is not none else 'Needs review' }}</td><td>{{ row.known_booking_value }} AUD{% if not row.complete %} (partial / needs review){% endif %}</td><td>{% if row.complete %}Complete for selected local records{% else %}{{ row.missing_amounts }} missing amounts · {{ row.source_reviews }} source reviews · {{ row.conflict_days }} overlap days{% endif %}</td><td>{% for channel, nights in row.channel_nights.items() %}{{ channel }}: {{ nights }}{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}</td></tr>
+{% else %}<tr><td colspan="8">No properties. <a href="/operations/setup">Check setup</a>.</td></tr>{% endfor %}</tbody></table></div>
+<p>Reserved nights do not prove actual guest attendance. Blocks and stop-sell dates reduce sellable nights. Resource-mapped properties need separate inventory-level reporting, so ratios and completeness are suppressed. No portfolio total is calculated.</p></section>
+{% endblock %}

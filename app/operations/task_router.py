@@ -3,7 +3,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from app.db import get_db
-from app.models import Property, StaffUser, WorkOrder, WorkOrderEvent, WorkOrderCheck
+from app.models import ChecklistTemplate, Property, StaffUser, WorkOrder, WorkOrderCost, WorkOrderEvent, WorkOrderCheck
 from app.operations.router import require_admin, templates
 from app.operations.tasks import CATEGORIES, PRIORITIES, TRANSITIONS, TaskError, form_token, save_task, change_checklist
 
@@ -36,6 +36,10 @@ def task_detail(entity_id: int, request: Request, db=Depends(get_db), admin=Depe
     task=db.get(WorkOrder,entity_id)
     if not task: raise HTTPException(404,'Task not found')
     return templates.TemplateResponse(request=request,name='operations_task_detail.html',context={
+        'checklist_templates':db.query(ChecklistTemplate).order_by(ChecklistTemplate.name).all(),
+        'template_token':form_token(admin,task,purpose='template-apply'),
+        'cost_token':form_token(admin,task,purpose='task-cost'),
+        'cost':db.query(WorkOrderCost).filter_by(work_order_id=entity_id).first(),
         'checks':db.query(WorkOrderCheck).filter_by(work_order_id=entity_id).order_by(WorkOrderCheck.id).all(),
         'check_token':form_token(admin,task,purpose='checklist'),'task':task,'token':form_token(admin,task),'categories':CATEGORIES,'priorities':PRIORITIES,
         'statuses':sorted(TRANSITIONS[task.status]),'property':db.get(Property,task.property_id),

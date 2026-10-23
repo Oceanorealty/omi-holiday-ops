@@ -48,6 +48,33 @@
     </section>
     {% endif %}
 
+    {% if checkin_form_token %}<section class="card"><h2>Arrival details</h2>
+    {% if arrival_details %}<p>{{ 'Details submitted' if details_current else 'Stay dates or house rules changed — please review and resubmit' }} · {{ arrival_details.submitted_at }} UTC</p>{% endif %}
+    <p>Share your expected arrival details. Submitting this form does not record actual arrival or change your reservation.</p>
+    <form class="ops-task-form" method="post" action="/guest/{{ booking.guest_portal_token }}/check-in">
+      <input type="hidden" name="token" value="{{ checkin_form_token }}">
+      <label>Contact name <input name="contact_name" maxlength="160" required value="{{ arrival_details.contact_name if arrival_details else (booking.guest.name or '' if booking.guest else '') }}"></label>
+      <label>Contact phone <input name="contact_phone" type="tel" maxlength="40" value="{{ arrival_details.contact_phone if arrival_details else '' }}"></label>
+      <label>Number of guests <input name="party_size" type="number" min="1" max="{{ booking.property.max_guests or 100 }}" required value="{{ arrival_details.party_size if arrival_details else 1 }}"></label>
+      <label>Expected arrival time (property local time) <input name="arrival_time" type="time" value="{{ arrival_details.arrival_time if arrival_details else '' }}"></label>
+      <label>Requests <textarea name="requests" maxlength="2000">{{ arrival_details.requests if arrival_details else '' }}</textarea></label>
+      {% if booking.property.house_rules %}<label><input type="checkbox" name="acknowledged" value="1" required>I have read the house rules shown above.</label>{% endif %}
+      <button class="btn primary">Submit arrival details</button>
+    </form></section>{% endif %}
+    {% if stay_agreement %}<section class="card" id="agreement"><h2>{{ stay_agreement_data.title }}</h2><p>Document #{{ stay_agreement.id }} · {{ stay_agreement_state }}</p>
+    {% with data=stay_agreement_data %}{% include 'agreement_snapshot.html' %}{% endwith %}
+    {% if stay_agreement_acceptance %}<p>Acknowledgement recorded for {{ stay_agreement_acceptance.typed_name }} at {{ stay_agreement_acceptance.accepted_at }} UTC. This record applies to the displayed document.</p>{% endif %}
+    <p><a href="/guest/{{ booking.guest_portal_token }}/agreements/{{ stay_agreement.id }}/download">Download document and acknowledgement record (.txt)</a></p>
+    {% if stay_agreement_token %}<form class="ops-task-form" method="post" action="/guest/{{ booking.guest_portal_token }}/agreements/{{ stay_agreement.id }}/accept"><input type="hidden" name="token" value="{{ stay_agreement_token }}"><label for="agreement-guest-name">Your name</label><input id="agreement-guest-name" name="typed_name" required maxlength="160"><label><input type="checkbox" name="acknowledged" value="1" required>I have read and agree to the document shown above.</label><button class="btn primary">Record my acknowledgement</button></form>{% endif %}
+    {% if stay_agreement_history %}<details><summary>Recent previously acknowledged documents (up to 20)</summary>{% for old in stay_agreement_history %}<p><a href="/guest/{{ booking.guest_portal_token }}/agreements/{{ old.id }}/download">Download prior document #{{ old.id }} and its acknowledgement</a></p>{% endfor %}<p>Older records remain available from the Omi team. Prior acknowledgements apply to their original documents.</p></details>{% endif %}</section>{% endif %}
+    {% if stay_account %}<section class="card"><h2>Your booking account</h2><p>{{ stay_account.currency }} · {{ stay_account_summary.state }}<br>Net charges: {{ stay_account_summary.charges }} · Payments recorded: {{ stay_account_summary.payments }} · Refunds recorded: {{ stay_account_summary.refunds }}<br><strong>Balance: {{ stay_account_summary.balance }} {{ stay_account.currency }}</strong></p><p>These are externally recorded payments and refunds. A negative balance is an account credit; refunds are arranged with the team.</p>{% for e in stay_account_rows %}<p>{{ e.occurred_on }} · {{ e.kind }} · {{ e.description }} · {{ e.amount }} {{ stay_account.currency }}{% if e.receipt_snapshot %} · <a href="/guest/{{ booking.guest_portal_token }}/account/receipts/{{ e.id }}">Receipt record</a>{% endif %}</p>{% endfor %}{% for s in stay_account_statements %}<p><a href="/guest/{{ booking.guest_portal_token }}/account/statements/{{ s.id }}">Account statement OPS-S-{{ '%08d'|format(s.id) }}</a> · {{ s.created_at }} UTC (historical snapshot)</p>{% endfor %}<p>Showing up to 20 issued statements. Contact the team for older records.</p></section>{% endif %}
+    <section class="card" id="messages"><h2>Messages with the Omi team</h2>
+    <p>Replies appear here when the team responds. This page does not send notifications; return here to check replies. For emergencies or urgent help, use the contact details below.</p>
+    <p>{{ portal_unread or 0 }} unread replies.</p>
+    {% if portal_read_token %}<form method="post" action="/guest/{{ booking.guest_portal_token }}/read"><input type="hidden" name="token" value="{{ portal_read_token }}"><button class="btn">Mark displayed messages read</button></form>{% endif %}
+    {% if portal_older %}<a href="?before={{ portal_older }}#messages">Earlier messages</a> · <a href="/guest/{{ booking.guest_portal_token }}#messages">Latest messages</a>{% endif %}
+    {% for m in portal_messages %}<article><h3>{{ 'You' if m.kind=='guest' else 'Omi team' }}</h3><p class="muted">{{ m.created_at }} UTC</p><p style="white-space:pre-wrap;overflow-wrap:anywhere">{{ m.body }}</p></article>{% else %}<p>No messages yet.</p>{% endfor %}
+    {% if portal_message_token %}<form class="ops-task-form" method="post" action="/guest/{{ booking.guest_portal_token }}/message"><input type="hidden" name="token" value="{{ portal_message_token }}"><label for="portal-message">Message to the team</label><textarea id="portal-message" name="body" maxlength="4000" required></textarea><button class="btn primary">Post message</button></form>{% endif %}</section>
     <section class="card">
       <h2>Need help?</h2>
       <p>WhatsApp: <a href="https://wa.me/61420974666">+61 420 974 666</a><br>Email: <a href="mailto:stays@omiholiday.com">stays@omiholiday.com</a></p>

@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block title %}Reservation conversation — Omi Holiday{% endblock %}
+{% block content %}<div class="page-head"><h1>Reservation #{{ booking.id }} · Portal conversation</h1><a href="/operations/inbox">Back to inbox</a></div>
+<section class="card"><p>{{ booking.property.name }} · {{ booking.check_in.date() }} → {{ booking.check_out.date() }} · {{ booking.status.value }}</p>
+<p>{{ unread }} unread guest messages for you. Opening this page does not mark messages read.</p>
+{% if booking.status.value=='confirmed' %}
+{% if booking.guest_portal_token %}<p><a rel="noreferrer" href="/guest/{{ booking.guest_portal_token }}">Guest stay portal</a> · Keep this private link for the reservation's guest.</p>{% endif %}
+<details><summary>{{ 'Replace private stay link' if booking.guest_portal_token else 'Create private stay link' }}</summary><p>Replacing the link immediately invalidates the previous guest link and its unsubmitted forms. Message history is retained. No link is sent automatically.</p>
+<form class="ops-task-form" method="post" action="/operations/inbox/{{ booking.id }}/link"><input type="hidden" name="token" value="{{ link_token }}"><label for="link-note">Reason</label><textarea id="link-note" name="note" minlength="10" maxlength="1000" required></textarea><button class="btn">{{ 'Replace guest link' if booking.guest_portal_token else 'Create guest link' }}</button></form></details>{% endif %}
+{% if read_token %}<form method="post" action="/operations/inbox/{{ booking.id }}/read"><input type="hidden" name="token" value="{{ read_token }}"><button class="btn">Mark displayed messages read</button></form>{% endif %}
+{% if older %}<a href="?before={{ older }}">Earlier messages</a> · <a href="/operations/inbox/{{ booking.id }}">Latest messages</a>{% endif %}
+{% for m in messages %}<article><h2>{{ 'Guest' if m.kind=='guest' else ('Internal note' if m.kind=='internal' else 'Portal reply') }}</h2><p class="muted">{{ m.created_at }} UTC{% if m.kind!='guest' %} · {{ m.actor }}{% endif %}{% if m.kind=='internal' %} · visible to administrators only{% endif %}</p><p style="white-space:pre-wrap;overflow-wrap:anywhere">{{ m.body }}</p></article>{% else %}<p>No messages yet.</p>{% endfor %}</section>
+<section class="card"><h2>Post to conversation</h2><p>A portal reply is available on the guest stay page. It sends no external notification. Internal notes are excluded from the guest page. For urgent matters, contact the guest through an available channel.</p>
+<form class="ops-task-form" method="post" action="/operations/inbox/{{ booking.id }}/message"><input type="hidden" name="token" value="{{ message_token }}">
+<label for="message-kind">Visibility</label><select id="message-kind" name="kind">{% if booking.status.value=='confirmed' %}<option value="reply">Reply in guest portal</option>{% endif %}<option value="internal">Internal note</option></select>
+<label for="message-body">Message</label><textarea id="message-body" name="body" maxlength="4000" required></textarea><button class="btn primary">Post message</button></form></section>
+{% if conversation %}<section class="card"><h2>Responsibility & status</h2><form class="ops-task-form" method="post" action="/operations/inbox/{{ booking.id }}/manage"><input type="hidden" name="token" value="{{ manage_token }}">
+<label for="conversation-state">State</label><select name="state" id="conversation-state">{% for s in ['open','waiting','resolved'] %}<option {% if conversation.state==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+<label for="conversation-assignee">Responsible staff</label><select name="assignee_id" id="conversation-assignee"><option value="">Unassigned</option>{% for s in staff %}<option value="{{ s.id }}" {% if conversation.assignee_id==s.id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select>
+<label for="conversation-note">Reason</label><textarea id="conversation-note" name="note" minlength="10" maxlength="1000" required></textarea><button class="btn">Save responsibility and status</button></form></section>{% endif %}{% endblock %}

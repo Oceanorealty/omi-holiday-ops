@@ -1,7 +1,8 @@
 """Read-only local calendar. Counts reserved nights, never claims actual occupancy."""
 from datetime import date, datetime, timedelta
 from sqlalchemy import or_
-from app.models import Booking, BookingStatus, Property
+from app.models import Booking, BookingStatus, InventoryDay, Property
+from app.operations.stock import stock_context,units_from_context,context_conflicts,inventory_interval
 
 
 def calendar_data(db, start: date, end: date, property_id=None):
@@ -17,6 +18,9 @@ def calendar_data(db, start: date, end: date, property_id=None):
     if property_id is not None and not properties:
         raise LookupError('Property not found')
     ids = [p.id for p in properties]
+    stops = {(r.property_id, r.night) for r in db.query(InventoryDay).filter(
+        InventoryDay.property_id.in_(ids), InventoryDay.night >= start.isoformat(),
+        InventoryDay.night < end.isoformat(), InventoryDay.stop_sell.is_(True)).all()}
     lower, upper = datetime.combine(start, datetime.min.time()), datetime.combine(end, datetime.min.time())
     bookings = db.query(Booking).filter(Booking.property_id.in_(ids), Booking.status == BookingStatus.confirmed,
         Booking.check_in < upper, or_(Booking.check_out > lower, Booking.check_out <= Booking.check_in)
@@ -30,7 +34,8 @@ def calendar_data(db, start: date, end: date, property_id=None):
     rows = []
     for prop in properties:
         records = grouped[prop.id]
-        invalid = [b.id for b in records if b.check_out <= b.check_in]
+        stock=stock_context(db,prop.id,lower,upper)
+        invalid = [b.id for b in stock['records'] if b.check_out <= b.check_in]
         cells = []
         for day in days:
             # Checkout does not consume the departing night. Same-day stays occupy
@@ -38,33 +43,34 @@ def calendar_data(db, start: date, end: date, property_id=None):
             overnight = [b for b in records if b.check_in.date() <= day < b.check_out.date()]
             in_day = [b for b in records if b.check_in < datetime.combine(day + timedelta(days=1), datetime.min.time())
                       and b.check_out > datetime.combine(day, datetime.min.time()) and b.check_out > b.check_in]
-            conflict_ids = set()
-            ordered = sorted(in_day, key=lambda b: b.check_in)
-            for i, left in enumerate(ordered):
-                for right in ordered[i+1:]:
-                    if right.check_in >= left.check_out:
-                        break
-                    if left.check_in < right.check_out and right.check_in < left.check_out:
-                        conflict_ids.update((left.id, right.id))
+            day_start=datetime.combine(day,datetime.min.time())
+            day_end=datetime.combine(day+timedelta(days=1),datetime.min.time())
+            conflict_ids=context_conflicts(stock,day_start,day_end)
             stays = [b for b in overnight if not b.is_block]
             blocks = [b for b in overnight if b.is_block]
-            cells.append({'date': day.isoformat(), 'booking_ids': [b.id for b in stays],
+            cells.append({'date': day.isoformat(), 'stop_sell': (prop.id, day.isoformat()) in stops,
+                'available_units':0 if (prop.id,day.isoformat()) in stops else units_from_context(stock,day_start,day_end),
+                'booking_ids': [b.id for b in stays],
                 'block_ids': [b.id for b in blocks], 'conflict_ids': sorted(conflict_ids),
                 'source_review_ids': [b.id for b in in_day if b.source_missing_since],
                 'arrivals': [b.id for b in in_day if not b.is_block and b.check_in.date() == day],
                 'departures': [b.id for b in records if not b.is_block and b.check_out.date() == day and b.check_out > b.check_in]})
         reserved = sum(bool(c['booking_ids']) for c in cells)
         blocked = sum(bool(c['block_ids']) for c in cells)
-        sellable = sum(not c['block_ids'] for c in cells)
+        sellable = sum(not c['block_ids'] and not c['stop_sell'] for c in cells)
         conflicts = sum(bool(c['conflict_ids']) for c in cells)
-        ambiguous = bool(invalid or conflicts)
+        stopped_reservations = sum(bool(c['booking_ids']) and c['stop_sell'] for c in cells)
+        ambiguous = bool(invalid or conflicts or stopped_reservations or stock['shared'])
         rows.append({'property_id': prop.id, 'name': prop.name, 'time_zone': prop.time_zone,
             'parent_property_id': prop.parent_property_id, 'days': cells, 'calendar_nights': count,
+            'inventory_capacity':stock['capacity'],'shared_inventory':stock['shared'],
             'reserved_nights': reserved, 'blocked_nights': blocked, 'sellable_nights': sellable,
+            'stop_sell_nights': sum(c['stop_sell'] for c in cells), 'stopped_reserved_nights': stopped_reservations,
             'conflict_days': conflicts, 'invalid_booking_ids': invalid,
             'reserved_night_pct': round(reserved / sellable * 100, 1) if sellable and not ambiguous else None,
             'evidence': [f'booking:{b.id}' for b in records]})
     return {'start': start.isoformat(), 'end': end.isoformat(), 'dates': [d.isoformat() for d in days], 'rows': rows,
         'limitations': 'Local confirmed reservations only; end date excluded. Dates use stored property-local booking times. '
-        'Blocks reduce sellable nights. Conflicts or invalid dates suppress percentages. Missing-source reservations remain reserved until reviewed. '
-        'Parent and child listings are separate calendars, not a shared inventory pool. No cross-property totals or actual guest attendance inferred.'}
+        'Blocks and stop-sell restrictions reduce sellable nights. Conflicts, invalid dates or reservations on stopped nights suppress percentages. Missing-source reservations remain reserved until reviewed. '
+        'Shared inventory is applied only through explicit resource bindings; parent-child names alone do not link inventory. '
+        'Reserved-night percentages are suppressed for resource-mapped listings. No cross-property totals or actual guest attendance inferred.'}

@@ -10,9 +10,10 @@
 <tr><td>Changed cleaning schedules</td><td>{{ schedule_reviews }}</td><td><a href="/cleaning">Review assigned work</a></td></tr>
 <tr><td>Messages with an uncertain delivery result</td><td>{{ message_reviews }}</td><td>Check the mailbox before sending again</td></tr>
 </tbody></table></div></section>
-<section class="card"><h2>Hostaway connection</h2><p>No live account connection has been verified. Imported observations stay separate from bookings, messages and accounts.</p>
+<section class="card"><h2>Booking sources</h2><p>Your website is the primary direct-booking storefront. Booking.com, Airbnb and other booking platforms connect to OPS as separate sources. <a href="/operations/channels">Review booking sources and connection readiness</a> or <a href="/operations/setup">set up calendar feeds</a>.</p>
+<details><summary>Historical integration observations</summary><p>Historical observations stay separate from bookings, messages and accounts.</p>
 <p>{{ shadow_count }} observations · {{ unmapped }} need a property match.</p>
-{% if runs %}<div class="table-wrap"><table class="table"><thead><tr><th>Run</th><th>Result</th><th>Records</th></tr></thead><tbody>{% for run in runs %}<tr><td>{{ run.id }}</td><td>{{ run.state }}</td><td>{{ run.record_count }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+{% if runs %}<div class="table-wrap"><table class="table"><thead><tr><th>Run</th><th>Result</th><th>Records</th></tr></thead><tbody>{% for run in runs %}<tr><td>{{ run.id }}</td><td>{{ run.state }}</td><td>{{ run.record_count }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}</details>
 </section>
 <section class="card"><h2>Automation status</h2><p>Scheduled processing: {{ 'enabled' if scheduler_enabled else 'paused' }}. Guest message delivery: {{ 'enabled for opted-in bookings' if dispatch_enabled else 'held for review' }}.</p><p class="muted">Owner statements require complete amounts, commission settings and final review. Imported bookings start with guest messages paused.</p></section>
 <section class="card"><h2>Resolve a review</h2>

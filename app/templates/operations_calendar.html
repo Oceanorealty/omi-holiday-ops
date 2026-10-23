@@ -16,11 +16,12 @@
 <section class="card">
 <h2><a href="/operations/calendar?start={{ start }}&amp;end={{ end }}&amp;property_id={{ row.property_id }}">{{ row.name }}</a> · #{{ row.property_id }}</h2>
 <p>Timezone: {{ row.time_zone }}{% if row.parent_property_id %} · Parent listing #{{ row.parent_property_id }}{% endif %}</p>
-<p>{{ row.reserved_nights }} reserved nights · {{ row.blocked_nights }} blocked nights · {{ row.sellable_nights }} sellable nights · {{ row.conflict_days }} days with overlaps.</p>
-<p>Reserved-night ratio: {% if row.reserved_night_pct is not none %}{{ row.reserved_night_pct }}%{% else %}Unavailable — check overlaps, invalid dates or fully blocked dates{% endif %}. This measures reservations, not actual guest attendance.</p>
+<p>Local inventory capacity: {{ row.inventory_capacity }}{% if row.shared_inventory %} · Explicit resource bindings apply{% endif %}.</p>
+<p>{{ row.reserved_nights }} reserved nights · {{ row.blocked_nights }} blocked nights · {{ row.stop_sell_nights }} stop-sell nights · {{ row.sellable_nights }} sellable nights · {{ row.conflict_days }} days with overlaps.</p>
+<p>Reserved-night ratio: {% if row.reserved_night_pct is not none %}{{ row.reserved_night_pct }}%{% else %}Not reported for resource-mapped listings, overlaps, invalid or fully unavailable dates{% endif %}. This measures reservations, not actual guest attendance.</p>
 {% if row.invalid_booking_ids %}<p role="alert">Invalid dates need review: {{ row.invalid_booking_ids|join(', ') }}.</p>{% endif %}
-<div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Reserved</th><th>Blocked</th><th>Arrivals / departures</th><th>Review</th></tr></thead><tbody>
-{% for day in row.days %}<tr><td>{{ day.date }}</td><td>{{ day.booking_ids|join(', ') or '—' }}</td><td>{{ day.block_ids|join(', ') or '—' }}</td><td>{{ day.arrivals|join(', ') or '—' }} / {{ day.departures|join(', ') or '—' }}</td><td>{% if day.conflict_ids %}Overlap: {{ day.conflict_ids|join(', ') }}. {% endif %}{% if day.source_review_ids %}<a href="/operations">Source review: {{ day.source_review_ids|join(', ') }}</a>{% endif %}</td></tr>{% endfor %}
+<div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Reserved</th><th>Blocked</th><th>Available units</th><th>Arrivals / departures</th><th>Review</th></tr></thead><tbody>
+{% for day in row.days %}<tr><td>{{ day.date }}</td><td>{{ day.booking_ids|join(', ') or '—' }}</td><td>{{ day.block_ids|join(', ') or '—' }}{% if day.stop_sell %} · Stop sell{% endif %}</td><td>{{ day.available_units }}</td><td>{{ day.arrivals|join(', ') or '—' }} / {{ day.departures|join(', ') or '—' }}</td><td>{% if day.conflict_ids %}Capacity conflict: {{ day.conflict_ids|join(', ') }}. {% endif %}{% if day.source_review_ids %}<a href="/operations">Source review: {{ day.source_review_ids|join(', ') }}</a>{% endif %}</td></tr>{% endfor %}
 </tbody></table></div>
 </section>
 {% else %}<section class="card"><p>No properties in this selection.</p></section>{% endfor %}

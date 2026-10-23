@@ -1,0 +1,3 @@
+{% extends 'base.html' %}
+{% block title %}Scheduled task result — Omi Holiday{% endblock %}
+{% block content %}<section class="card"><h1>Scheduled task generation</h1><p>{{ generated }} tasks generated.</p>{% if needs_another_run %}<p>More work needs another run. No unprocessed dates were skipped.</p>{% endif %}<p><a href="/operations/tasks">View tasks</a> · <a href="/operations/task-plans">Back to plans</a></p></section>{% endblock %}

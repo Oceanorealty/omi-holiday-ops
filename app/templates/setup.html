@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Setup — Omi Holiday{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Operations setup</h1></div>
+<p>Check data connections before relying on an empty calendar or a zero review count.</p>
+<section class="card"><h2>Team</h2>
+<p>{{ staff_count }} active named staff · {{ cleaner_count }} active cleaners.</p>
+{% if not staff_count %}<p class="tag tag-warn">No named staff are available for task assignment.</p>{% endif %}
+<p><a href="/staff">Manage staff logins</a> · <a href="/cleaning">Manage cleaners</a></p></section>
+<section class="card"><h2>Property readiness</h2><div class="table-wrap"><table class="table small">
+<thead><tr><th>Property</th><th>Calendar source</th><th>Timezone</th><th>Commission</th><th>Guest instructions</th></tr></thead>
+<tbody>{% for row in rows %}<tr>
+<td>{{ row.property.name }}</td>
+<td>{% if not row.feed_count %}Not connected{% else %}{{ row.synced }}/{{ row.feed_count }} synced without a reported error{% if row.errors %} · {{ row.errors }} need review{% endif %}{% endif %}</td>
+<td>{{ row.property.time_zone }}{% if row.property.time_zone == 'UTC' %} — verify property-local timezone{% endif %}</td>
+<td>{{ 'Configured' if row.commission_ready else 'Missing' }}</td>
+<td>{{ 'Configured' if row.guest_info_ready else 'Incomplete' }}</td></tr>
+{% else %}<tr><td colspan="5">Add a property to begin.</td></tr>{% endfor %}</tbody></table></div>
+<p><a href="/properties">Configure properties and calendar feeds</a></p>
+<p>iCal connects calendar dates. It does not provide real-time rate publishing or a guest inbox. A successful past sync does not prove a source is current.</p></section>
+{% endblock %}

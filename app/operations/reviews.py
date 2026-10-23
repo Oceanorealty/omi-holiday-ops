@@ -86,6 +86,9 @@ def apply_review(db, *, actor, kind, entity_id, action, token, note):
         raise ReviewError("Describe the evidence checked in 10–1000 characters")
     version = _verify(token, actor, kind, entity_id, action)
     try:
+        if kind == 'source':
+            from app.operations.stock import lock_stock
+            lock_stock(db)
         # This insert serializes SQLite writers and supplies a single-use key.
         audit = OperationsReview(token_digest=hashlib.sha256(token.encode()).hexdigest(), actor=actor,
             entity_kind=kind, entity_id=entity_id, action=action, note=note.strip(),
@@ -107,14 +110,8 @@ def apply_review(db, *, actor, kind, entity_id, action, token, note):
                 if row.cleaning_task and row.cleaning_task.status != CleaningStatus.done:
                     row.cleaning_task.cancelled_at = datetime.utcnow()
                     row.cleaning_task.schedule_review_required = False
-                group = db.query(Booking).filter_by(property_id=row.property_id).all()
-                for member in group:
-                    member.has_conflict = False
-                active = [b for b in group if b.status == BookingStatus.confirmed]
-                for i, a in enumerate(active):
-                    for b in active[i+1:]:
-                        if a.check_in < b.check_out and b.check_in < a.check_out:
-                            a.has_conflict = b.has_conflict = True
+                from app.operations.stock import refresh_conflicts
+                refresh_conflicts(db)
             # This is an operator decision, not a fabricated new provider observation.
             row.source_missing_since = None
             after = dict(status=row.status.value, missing=None)

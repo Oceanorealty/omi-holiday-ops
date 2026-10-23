@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Reservations — Omi Holiday{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Reservations</h1></div>
+<p>Create direct reservations and review channel imports. Dates refer to property-local nights; check-out does not reserve the departing night.</p>
+<section class="card"><h2>Reservation list</h2><form class="form-row" method="get">
+<label>Property <select name="property_id"><option value="">All properties</option>{% for p in properties %}<option value="{{ p.id }}" {% if p.id == property_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label>
+<label>Status <select name="status">{% for s in ['confirmed','cancelled','all'] %}<option value="{{ s }}" {% if s == status %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label><button class="btn">Filter</button></form>
+<div class="table-wrap"><table class="table small"><thead><tr><th>ID</th><th>Property</th><th>Channel</th><th>Dates</th><th>Guest</th><th>Amount</th><th>Status</th></tr></thead><tbody>
+{% for b in rows %}<tr><td><a href="/operations/reservations/{{ b.id }}">#{{ b.id }}</a></td><td>{{ b.property.name }}</td><td>{{ b.platform.value }}</td><td>{{ b.check_in.date() }} → {{ b.check_out.date() }}</td><td>{{ b.guest.name or '—' if b.guest else '—' }}</td><td>{{ b.amount if b.amount is not none else 'Unknown' }}</td><td>{{ b.status.value }}{% if b.has_conflict %} · Conflict{% endif %}{% if b.source_missing_since %} · Source needs review{% endif %}</td></tr>
+{% else %}<tr><td colspan="7">No reservations in this selection. <a href="/operations/setup">Check calendar connections</a>.</td></tr>{% endfor %}</tbody></table></div>
+{% if truncated %}<p>Showing 200 reservations; filter by property to narrow the list.</p>{% endif %}</section>
+<section class="card"><h2>Create a direct reservation</h2>
+<p>Local inventory is checked before saving. This does not reserve nights on an OTA or collect payment. Guest messages remain paused.</p>
+<form method="post" action="/operations/reservations/0" class="form-row">
+<input type="hidden" name="token" value="{{ token }}">
+<label>Property <select name="property_id" required>{% for p in properties %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></label>
+{% set booking = none %}{% include "reservation_fields.html" %}<button class="btn primary" {% if not properties %}disabled{% endif %}>Create reservation</button></form></section>
+{% endblock %}

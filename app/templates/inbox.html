@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block title %}Portal inbox — Omi Holiday{% endblock %}
+{% block content %}<div class="page-head"><h1>Portal inbox</h1></div>
+<section class="card"><p>Messages posted through the guest stay portal. Replies appear in that portal; no email, WhatsApp or OTA delivery is implied. Guests must return to the portal to see replies. Assignment records responsibility; access currently requires an administrator.</p>
+<form method="get" class="form-row"><label>Property <select name="property_id"><option value="">All properties</option>{% for p in properties %}<option value="{{ p.id }}" {% if property_id==p.id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label>
+<label>Status <select name="state"><option value="">All states</option>{% for s in ['open','waiting','resolved'] %}<option {% if state==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label><button class="btn">Filter conversations</button></form>
+{% for r in conversations %}{% set b=bookings[r.booking_id] %}<article><h2><a href="/operations/inbox/{{ b.id }}">Reservation #{{ b.id }} · {{ b.property.name }}</a></h2><p>{{ b.check_in.date() }} → {{ b.check_out.date() }} · {{ r.state }} · {{ unread[r.id] }} unread guest messages for you<br>{{ staff[r.assignee_id].name if r.assignee_id in staff else 'Unassigned' }} · updated {{ r.updated_at }} UTC</p></article>
+{% else %}<p>No portal conversations. A guest can start a conversation from their stay link; administrators can open a reservation conversation from its detail page.</p>{% endfor %}
+{% if truncated %}<p>Showing the 200 most recently updated conversations. Filter by property and state.</p>{% endif %}</section>{% endblock %}
