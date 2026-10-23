@@ -114,7 +114,7 @@ from app.main import app
 from app.auth import SESSION_COOKIE,make_session_cookie
 with TestClient(app) as c:
  c.cookies.set(SESSION_COOKIE,make_session_cookie('release-admin'))
- for path in ['/healthz','/','/transactions','/cleaning','/operations','/operations/calendar','/operations/tasks','/operations/readiness','/operations/setup','/operations/reservations','/operations/inventory','/operations/reports','/operations/channels','/operations/task-plans','/operations/guest-checkins','/operations/reservation-requests','/operations/resources','/operations/inbox','/operations/agreements','/operations/accounts']:
+ for path in ['/healthz','/','/transactions','/cleaning','/operations','/operations/calendar','/operations/tasks','/operations/readiness','/operations/setup','/operations/reservations','/operations/inventory','/operations/reports','/operations/channels','/operations/task-plans','/operations/guest-checkins','/operations/guest-access','/operations/reservation-requests','/operations/resources','/operations/inbox','/operations/agreements','/operations/accounts']:
   response=c.get(path)
   assert response.status_code==200,(path,response.status_code)
   assert 'no-store' in response.headers['Cache-Control']
@@ -271,3 +271,25 @@ def test_postgres_global_payment_reference_and_refund_concurrency(pg):
     with Session(engine) as s:
         assert s.query(BookingLedgerEntry).filter_by(kind='payment').count()==1
         assert totals(entries(s,booking_id))['refunds']==60
+
+
+def test_postgres_guest_access_rule_concurrent_version_update(pg):
+    from app.models import GuestAccessRule
+    from app.operations.guest_access import rule_token,save_rule
+    engine,_,_=pg;Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        p=Property(name='Synthetic portal access property');s.add(p);s.commit();property_id=p.id
+        token=rule_token('reviewer',property_id,'door_code',None)
+    barrier=threading.Barrier(2)
+    def update_rule(i):
+        with Session(engine) as s:
+            barrier.wait(timeout=5)
+            try:
+                save_rule(s,actor='reviewer',property_id=property_id,field='door_code',token=token,opening_hours=str(i),
+                    require_arrival=True,require_agreement=False,require_account_clear=False,hide_after_checkout=True,
+                    note='Synthetic concurrent access rule update')
+                return 'saved'
+            except TaskError:return 'held'
+    with ThreadPoolExecutor(max_workers=2) as pool:assert sorted(pool.map(update_rule,[24,48]))==['held','saved']
+    with Session(engine) as s:
+        rule=s.query(GuestAccessRule).one();assert rule.version==1 and rule.require_arrival and rule.hide_after_checkout
