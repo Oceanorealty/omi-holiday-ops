@@ -8,6 +8,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -836,3 +837,142 @@ class BookingAccountStatement(Base):
     snapshot_hash = Column(String(64), nullable=False)
     actor = Column(String(160), nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class GuestAccessRule(Base):
+    __tablename__ = 'guest_access_rules'
+    __table_args__ = (UniqueConstraint('property_id', 'field', name='uq_guest_access_field'),)
+    id = Column(Integer, primary_key=True)
+    property_id = Column(Integer, ForeignKey('properties.id'), nullable=False, index=True)
+    field = Column(String(40), nullable=False)
+    opening_hours = Column(Integer, nullable=True)
+    require_arrival = Column(Boolean, nullable=False, default=False)
+    require_agreement = Column(Boolean, nullable=False, default=False)
+    require_account_clear = Column(Boolean, nullable=False, default=False)
+    hide_after_checkout = Column(Boolean, nullable=False, default=False)
+    version = Column(Integer, nullable=False, default=1)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class GuestAccountClearance(Base):
+    __tablename__ = 'guest_account_clearances'
+    booking_id = Column(Integer, ForeignKey('bookings.id'), primary_key=True)
+    booking_fingerprint = Column(String(64), nullable=False)
+    ledger_hash = Column(String(64), nullable=False)
+    actor = Column(String(160), nullable=False)
+    reviewed_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class CalendarNote(Base):
+    __tablename__ = 'calendar_notes'
+    __table_args__ = (UniqueConstraint('property_id', 'night', name='uq_calendar_note_night'),)
+    id = Column(Integer, primary_key=True)
+    property_id = Column(Integer, ForeignKey('properties.id'), nullable=False, index=True)
+    night = Column(String(10), nullable=False)
+    body = Column(Text, nullable=False, default='')
+    version = Column(Integer, nullable=False, default=1)
+    actor = Column(String(160), nullable=False)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class CalendarNoteChange(Base):
+    __tablename__ = 'calendar_note_changes'
+    id = Column(Integer, primary_key=True)
+    property_id = Column(Integer, ForeignKey('properties.id'), nullable=False, index=True)
+    start = Column(String(10), nullable=False)
+    end = Column(String(10), nullable=False)
+    command_id = Column(Integer, ForeignKey('ops_commands.id'), nullable=False, unique=True)
+
+
+class TaskTimeEntry(Base):
+    __tablename__ = 'task_time_entries'
+    id = Column(Integer, primary_key=True)
+    work_order_id = Column(Integer, ForeignKey('work_orders.id'), nullable=False, index=True)
+    worker_id = Column(Integer, ForeignKey('staff_users.id'), nullable=False, index=True)
+    active_worker_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True, unique=True)
+    started_at = Column(DateTime, nullable=False)
+    stopped_at = Column(DateTime, nullable=True)
+    voided = Column(Boolean, nullable=False, default=False)
+    actor = Column(String(160), nullable=False)
+
+
+class TaskAttachment(Base):
+    __tablename__ = 'task_attachments'
+    id = Column(Integer, primary_key=True)
+    work_order_id = Column(Integer, ForeignKey('work_orders.id'), nullable=False, index=True)
+    filename = Column(String(180), nullable=False)
+    media_type = Column(String(80), nullable=False)
+    data = Column(LargeBinary, nullable=False)
+    size = Column(Integer, nullable=False)
+    sha256 = Column(String(64), nullable=False)
+    archived = Column(Boolean, nullable=False, default=False)
+    actor = Column(String(160), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class CustomFieldDefinition(Base):
+    __tablename__ = 'custom_field_definitions'
+    __table_args__ = (UniqueConstraint('scope', 'key', name='uq_custom_field_scope_key'),)
+    id = Column(Integer, primary_key=True)
+    scope = Column(String(20), nullable=False)
+    key = Column(String(40), nullable=False)
+    label = Column(String(100), nullable=False)
+    kind = Column(String(20), nullable=False)
+    options = Column(Text, nullable=False, default='[]')
+    archived = Column(Boolean, nullable=False, default=False)
+    version = Column(Integer, nullable=False, default=1)
+
+
+class CustomFieldValue(Base):
+    __tablename__ = 'custom_field_values'
+    __table_args__ = (UniqueConstraint('field_id', 'entity_id', name='uq_custom_field_value'),)
+    id = Column(Integer, primary_key=True)
+    field_id = Column(Integer, ForeignKey('custom_field_definitions.id'), nullable=False, index=True)
+    entity_id = Column(Integer, nullable=False, index=True)
+    value = Column(Text, nullable=True)
+    version = Column(Integer, nullable=False, default=1)
+
+
+class CustomFieldChange(Base):
+    __tablename__ = 'custom_field_changes'
+    id = Column(Integer, primary_key=True)
+    scope = Column(String(20), nullable=False, index=True)
+    entity_id = Column(Integer, nullable=False, index=True)
+    command_id = Column(Integer, ForeignKey('ops_commands.id'), nullable=False, unique=True)
+
+
+class RegistrationConfig(Base):
+    __tablename__ = 'registration_configs'
+    property_id = Column(Integer, ForeignKey('properties.id'), primary_key=True)
+    version = Column(Integer, nullable=False, default=1)
+    require_adults = Column(Boolean, nullable=False, default=False)
+    questions = Column(Text, nullable=False, default='[]')
+
+
+class GuestRegistration(Base):
+    __tablename__ = 'guest_registrations'
+    booking_id = Column(Integer, ForeignKey('bookings.id'), primary_key=True)
+    version = Column(Integer, nullable=False, default=1)
+    state = Column(String(20), nullable=False)
+    payload = Column(Text, nullable=False)
+    booking_hash = Column(String(64), nullable=False)
+    config_hash = Column(String(64), nullable=False)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class GuestRegistrationEvent(Base):
+    __tablename__ = 'guest_registration_events'
+    id = Column(Integer, primary_key=True)
+    booking_id = Column(Integer, ForeignKey('bookings.id'), nullable=False, index=True)
+    token_digest = Column(String(64), nullable=False, unique=True)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class BookingWindow(Base):
+    __tablename__ = 'booking_windows'
+    property_id = Column(Integer, ForeignKey('properties.id'), primary_key=True)
+    version = Column(Integer, nullable=False, default=1)
+    minimum_notice_days = Column(Integer, nullable=False, default=0)
+    maximum_advance_days = Column(Integer, nullable=True)
+    same_day_cutoff = Column(String(5), nullable=False, default='')
