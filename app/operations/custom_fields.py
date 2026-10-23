@@ -76,7 +76,7 @@ def parse_value(field,raw):
     raise TaskError('Invalid value for '+field.label)
 
 
-def save_values(db,*,actor,scope,entity_id,token,values,note):
+def save_values(db,*,actor,scope,entity_id,token,values,note,commit=True):
     try:
         lock_stock(db);db.expire_all();defs,existing,purpose=values_state(db,scope,entity_id)
         verify_token(token,actor,entity_id,purpose=purpose)
@@ -91,7 +91,9 @@ def save_values(db,*,actor,scope,entity_id,token,values,note):
             changes.append({'field_id':id,'label':active[id].label,'kind':active[id].kind,'before':before,'after':value,'version':row.version})
         record_command(db,token,'custom-field-values',actor,note,{'scope':scope,'entity_id':entity_id,'changes':changes})
         db.flush();command=db.query(OpsCommand).filter_by(token_digest=hashlib.sha256(token.encode()).hexdigest()).one()
-        db.add(CustomFieldChange(scope=scope,entity_id=entity_id,command_id=command.id));db.commit()
+        db.add(CustomFieldChange(scope=scope,entity_id=entity_id,command_id=command.id))
+        if commit:db.commit()
+        else:db.flush()
     except IntegrityError:
         db.rollback();raise TaskError('This field submission was already recorded') from None
     except Exception:
