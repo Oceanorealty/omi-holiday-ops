@@ -8,6 +8,7 @@ from app.models import Booking, BookingStatus, CleaningTask, IntegrationRun, Mes
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+DIRECT_PROVIDERS = ('booking_com', 'airbnb', 'expedia', 'vrbo', 'ctrip', 'other')
 
 
 def require_admin(request: Request, db=Depends(get_db)):
@@ -37,9 +38,9 @@ def overview(db):
         "missing_amounts": db.query(Booking).filter(Booking.amount.is_(None), Booking.is_block.is_(False), Booking.status == BookingStatus.confirmed).count(),
         "schedule_reviews": db.query(CleaningTask).filter_by(schedule_review_required=True).count(),
         "message_reviews": db.query(MessageDelivery).filter(MessageDelivery.state.in_(["sending", "unknown"])).count(),
-        "unmapped": db.query(ShadowReservation).filter_by(state="unmapped").count(),
-        "shadow_count": db.query(ShadowReservation).count(),
-        "runs": db.query(IntegrationRun).order_by(IntegrationRun.id.desc()).limit(10).all(),
+        "unmapped": db.query(ShadowReservation).filter(ShadowReservation.provider.in_(DIRECT_PROVIDERS), ShadowReservation.state=="unmapped").count(),
+        "shadow_count": db.query(ShadowReservation).filter(ShadowReservation.provider.in_(DIRECT_PROVIDERS)).count(),
+        "runs": db.query(IntegrationRun).filter(IntegrationRun.provider.in_(DIRECT_PROVIDERS)).order_by(IntegrationRun.id.desc()).limit(10).all(),
         "dispatch_enabled": os.environ.get("OPS_MESSAGE_DISPATCH_ENABLED") == "1",
         "scheduler_enabled": os.environ.get("OPS_SCHEDULER_ENABLED", "1") == "1",
     }
