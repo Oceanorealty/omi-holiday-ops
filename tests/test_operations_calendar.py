@@ -79,3 +79,30 @@ def test_calendar_routes_admin_only_and_no_secret_output(db,monkeypatch):
         overview=client.get('/operations').text
         title=re.search(r'<title>(.*?)</title>',overview,re.S).group(1)
         assert '<form' not in title and overview.count('Resolve a review')==1
+
+
+def test_calendar_views_keep_scope_and_checkout_semantics(db,monkeypatch):
+    import html
+    from app.operations.router import require_admin
+    p=prop(db,name='Selected listing');q=prop(db,name='Other listing')
+    b=booking(db,p,door_code='PRIVATE-CODE',guest_portal_token='PRIVATE-TOKEN')
+    booking(db,q)
+    app=FastAPI();app.include_router(router)
+    app.dependency_overrides[get_db]=lambda:db
+    app.dependency_overrides[require_admin]=lambda:'synthetic-admin'
+    url=f'/operations/calendar?start=2026-10-21&end=2026-10-24&property_id={p.id}'
+    with TestClient(app) as client:
+        response=client.get(url);assert response.status_code==200
+        text=html.unescape(response.text)
+        assert 'Scrollable property and night grid' in text
+        assert 'Other listing' not in text and 'PRIVATE-' not in text
+        assert f'/operations/reservations/{b.id}' in text
+        assert f'start=2026-10-24&end=2026-10-27&view=grid&property_id={p.id}' in text
+        assert f'start=2026-10-21&end=2026-10-24&view=list&property_id={p.id}' in text
+        cells=re.findall(r'<td class="[^"]*">(.*?)</td>',text,re.S)
+        assert len(cells)==3 and '1 available' in cells[2]
+        assert f'Departures: {b.id}' in cells[2] and 'Reservation #' not in cells[2]
+        detailed=client.get(url+'&view=list')
+        assert detailed.status_code==200 and 'Reserved-night ratio:' in detailed.text
+        assert 'PRIVATE-' not in detailed.text
+        assert client.get(url+'&view=unknown').status_code==422
