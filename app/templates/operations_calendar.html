@@ -2,19 +2,60 @@
 {% block title %}Calendar — Omi Holiday{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Property calendar</h1><p>Reservations, blocked nights and records that need attention.</p></div>
+<style>
+.portfolio-calendar{max-height:70vh;overflow:auto;isolation:isolate}
+.portfolio-calendar table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%}
+.portfolio-calendar th,.portfolio-calendar td{min-width:145px;border-right:1px solid #ddd;border-bottom:1px solid #ddd;vertical-align:top;padding:10px}
+.portfolio-calendar thead th{position:sticky;top:0;background:var(--cream,#f7f4ee);z-index:2}
+.portfolio-calendar .property-column{position:sticky;left:0;min-width:190px;max-width:250px;background:var(--cream,#f7f4ee);z-index:1}
+.portfolio-calendar thead .property-column{z-index:3}
+.portfolio-calendar .calendar-stay{background:#edf3f8}.portfolio-calendar .calendar-closed{background:#f0eeea}
+.portfolio-calendar .calendar-review{box-shadow:inset 0 0 0 2px #a65c18}
+.portfolio-calendar small,.portfolio-calendar .calendar-record{display:block;margin-top:4px}
+.calendar-controls{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0}
+</style>
 <section class="card">
 <form method="get" action="/operations/calendar">
 <label for="start">First night</label><input id="start" name="start" type="date" required value="{{ start }}">
 <label for="end">End date (excluded)</label><input id="end" name="end" type="date" required value="{{ end }}">
 {% if selected_property_id %}<input type="hidden" name="property_id" value="{{ selected_property_id }}">{% endif %}
+<input type="hidden" name="view" value="{{ view }}">
 <button class="btn" type="submit">Show dates</button>
 </form>
-<p>Up to 62 nights. <a href="/operations/calendar?start={{ start }}&amp;end={{ end }}">All properties</a>.</p>
+<p>Up to 62 nights. <a href="/operations/calendar?start={{ start }}&amp;end={{ end }}&amp;view={{ view }}">All properties</a>.</p>
+{% set scope = '&property_id=' ~ selected_property_id if selected_property_id else '' %}
+<nav aria-label="Calendar views and dates" class="calendar-controls">
+{% if previous_start %}<a href="/operations/calendar?start={{ previous_start }}&amp;end={{ previous_end }}&amp;view={{ view }}{{ scope }}">Previous period</a>{% endif %}
+{% if next_start %}<a href="/operations/calendar?start={{ next_start }}&amp;end={{ next_end }}&amp;view={{ view }}{{ scope }}">Next period</a>{% endif %}
+<a href="/operations/calendar?start={{ start }}&amp;end={{ end }}&amp;view=grid{{ scope }}"{% if view == 'grid' %} aria-current="page"{% endif %}>Portfolio grid</a>
+<a href="/operations/calendar?start={{ start }}&amp;end={{ end }}&amp;view=list{{ scope }}"{% if view == 'list' %} aria-current="page"{% endif %}>Detailed list</a>
+</nav>
 <p class="muted">{{ limitations }}</p>
 </section>
+{% if view == 'grid' %}
+<section class="card">
+<h2>All selected properties · {{ start }} → {{ end }}</h2>
+<p>Scroll across dates. Checkout does not reserve the departing night. Availability includes explicit shared resources; counts across listings must not be added together.</p>
+<p>Blue: overnight reservation · Grey: closed nights without an overnight reservation · Outline: record needs review. Arrivals and departures can occur on a night with no overnight reservation.</p>
+{% if rows %}
+<div class="table-wrap portfolio-calendar" tabindex="0" role="region" aria-label="Scrollable property and night grid">
+<table class="table"><caption>Property-local dates; end date excluded. All values are local inventory, not live channel confirmation.</caption>
+<thead><tr><th scope="col" class="property-column">Property</th>{% for day in dates %}<th scope="col">{{ day }}</th>{% endfor %}</tr></thead>
+<tbody>{% for row in rows %}<tr>
+<th scope="row" class="property-column"><a href="/operations/calendar?start={{ start }}&amp;end={{ end }}&amp;view={{ view }}&amp;property_id={{ row.property_id }}">{{ row.name }}</a><small>#{{ row.property_id }} · {{ row.time_zone }}</small><small>Capacity {{ row.inventory_capacity }}{% if row.shared_inventory %} · shared{% endif %}</small>{% if row.invalid_booking_ids %}<small role="alert">Invalid dates: {{ row.invalid_booking_ids|join(', ') }}</small>{% endif %}</th>
+{% for day in row.days %}<td class="{% if day.booking_ids %}calendar-stay {% endif %}{% if not day.booking_ids and (day.available_units == 0 or day.stop_sell) %}calendar-closed {% endif %}{% if day.conflict_ids or day.source_review_ids %}calendar-review{% endif %}">
+<strong>{{ day.available_units }} available</strong>{% if day.stop_sell %}<small>Stop sell</small>{% endif %}
+{% for id in day.booking_ids %}<a class="calendar-record" href="/operations/reservations/{{ id }}">Reservation #{{ id }}</a>{% endfor %}
+{% if day.block_ids %}<small>Blocked: {{ day.block_ids|join(', ') }}</small>{% endif %}
+{% if day.arrivals %}<small>Arrivals: {{ day.arrivals|join(', ') }}</small>{% endif %}{% if day.departures %}<small>Departures: {{ day.departures|join(', ') }}</small>{% endif %}
+{% if day.conflict_ids %}<small>Capacity conflict: {{ day.conflict_ids|join(', ') }}</small>{% endif %}{% if day.source_review_ids %}<a class="calendar-record" href="/operations">Source review: {{ day.source_review_ids|join(', ') }}</a>{% endif %}
+</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>
+{% else %}<p>No properties in this selection.</p>{% endif %}
+</section>
+{% else %}
 {% for row in rows %}
 <section class="card">
-<h2><a href="/operations/calendar?start={{ start }}&amp;end={{ end }}&amp;property_id={{ row.property_id }}">{{ row.name }}</a> · #{{ row.property_id }}</h2>
+<h2><a href="/operations/calendar?start={{ start }}&amp;end={{ end }}&amp;property_id={{ row.property_id }}&amp;view=list">{{ row.name }}</a> · #{{ row.property_id }}</h2>
 <p>Timezone: {{ row.time_zone }}{% if row.parent_property_id %} · Parent listing #{{ row.parent_property_id }}{% endif %}</p>
 <p>Local inventory capacity: {{ row.inventory_capacity }}{% if row.shared_inventory %} · Explicit resource bindings apply{% endif %}.</p>
 <p>{{ row.reserved_nights }} reserved nights · {{ row.blocked_nights }} blocked nights · {{ row.stop_sell_nights }} stop-sell nights · {{ row.sellable_nights }} sellable nights · {{ row.conflict_days }} days with overlaps.</p>
@@ -25,4 +66,5 @@
 </tbody></table></div>
 </section>
 {% else %}<section class="card"><p>No properties in this selection.</p></section>{% endfor %}
+{% endif %}
 {% endblock %}
