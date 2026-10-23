@@ -114,7 +114,7 @@ from app.main import app
 from app.auth import SESSION_COOKIE,make_session_cookie
 with TestClient(app) as c:
  c.cookies.set(SESSION_COOKIE,make_session_cookie('release-admin'))
- for path in ['/healthz','/','/transactions','/cleaning','/operations','/operations/calendar','/operations/tasks','/operations/readiness','/operations/setup','/operations/reservations','/operations/inventory','/operations/reports','/operations/channels','/operations/task-plans','/operations/guest-checkins','/operations/reservation-requests','/operations/resources','/operations/inbox']:
+ for path in ['/healthz','/','/transactions','/cleaning','/operations','/operations/calendar','/operations/tasks','/operations/readiness','/operations/setup','/operations/reservations','/operations/inventory','/operations/reports','/operations/channels','/operations/task-plans','/operations/guest-checkins','/operations/reservation-requests','/operations/resources','/operations/inbox','/operations/agreements']:
   response=c.get(path)
   assert response.status_code==200,(path,response.status_code)
   assert 'no-store' in response.headers['Cache-Control']
@@ -207,3 +207,29 @@ def test_postgres_portal_concurrent_retry_creates_one_conversation_and_message(p
             return post_message(s,actor='reviewer',booking_id=booking_id,token=token,kind='reply',body='One synthetic portal reply')
     with ThreadPoolExecutor(max_workers=2) as pool:assert len(set(pool.map(post,range(2))))==1
     with Session(engine) as s:assert s.query(PortalConversation).count()==s.query(PortalMessage).count()==1
+
+
+def test_postgres_agreement_acknowledgement_retry_is_atomic(pg):
+    from datetime import timedelta
+    from app.models import AgreementAcceptance,BookingAgreement
+    from app.operations.agreements import (accept_agreement,acceptance_token,create_version,
+        issue_agreement,issue_token,policy_token)
+    engine,_,_=pg;Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        p=Property(name='Synthetic agreement property');s.add(p);s.flush()
+        start=datetime.utcnow()+timedelta(days=7)
+        b=Booking(property_id=p.id,platform='direct',uid='synthetic-agreement',check_in=start,
+            check_out=start+timedelta(days=2),status='confirmed',guest_portal_token='synthetic-pg-agreement-link')
+        s.add(b);s.commit()
+        create_version(s,actor='reviewer',property_id=p.id,token=policy_token(s,'reviewer',p.id),
+            title='Synthetic demonstration',body='Synthetic non-binding document for a database test only.',note='Prepare synthetic PostgreSQL agreement')
+        entity_id=issue_agreement(s,actor='reviewer',booking_id=b.id,token=issue_token(s,'reviewer',b),note='Issue synthetic PostgreSQL agreement')
+        token=acceptance_token(b,s.get(BookingAgreement,entity_id))
+    barrier=threading.Barrier(2)
+    def acknowledge(_):
+        with Session(engine) as s:
+            barrier.wait(timeout=5)
+            return accept_agreement(s,portal_token='synthetic-pg-agreement-link',agreement_id=entity_id,
+                token=token,typed_name='Synthetic holder',acknowledged=True)
+    with ThreadPoolExecutor(max_workers=2) as pool:assert len(set(pool.map(acknowledge,range(2))))==1
+    with Session(engine) as s:assert s.query(AgreementAcceptance).count()==1
