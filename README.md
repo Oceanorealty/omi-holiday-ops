@@ -40,6 +40,8 @@ end to end without needing real credentials for local dev.
 | `SMTP_USER` | Full mailbox address, e.g. `bookings@omiholiday.com` |
 | `SMTP_PASSWORD` | Mailbox password |
 | `SMTP_FROM` | Optional; defaults to `SMTP_USER` if unset |
+| `GST_REGISTERED` | Optional, defaults to unset/false. Set to `true` to show a GST column on the Finance page's company summary (assumes GST-inclusive pricing, 10% unless `GST_RATE` overrides it). Leave unset unless Omi Holiday is actually GST-registered. |
+| `GST_RATE` | Optional, defaults to `0.10`. Only read when `GST_REGISTERED=true`. |
 
 `SMTP_PORT` note: `465` is implicit SSL, `587` is STARTTLS — the mailer
 picks the right handshake based on which port you set. SiteGround-hosted
@@ -67,7 +69,10 @@ mailboxes (like `bookings@omiholiday.com`) use 465.
 7. Go to **Finance** to record each booking's expected amount (inline on
    the Bookings page), upload a payout/bank CSV, and match transactions to
    bookings. The monthly summary only reflects bookings with an amount set
-   and transactions that have been matched.
+   and transactions that have been matched. Generate owner statements per
+   property/month, then **Company summary** rolls every property's
+   statement up into one company-wide total per month — gross, expenses,
+   Omi's own commission revenue, and net paid out to owners.
 
 ## Data model
 

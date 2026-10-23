@@ -226,4 +226,49 @@
   <p class="muted" style="margin-top:8px">Finalizing locks the statement so it stops recalculating on re-generate. Owners with an email on file get this automatically each month, and can see it anytime at their owner portal link (Properties page).</p>
 </section>
 
+<section class="card">
+  <h2>Company summary</h2>
+  <p class="muted" style="margin-top:-8px; margin-bottom:12px">
+    All properties combined, by month — rolled up from the owner statements above.
+    "Commission" is Omi Holiday's own revenue; gross, expenses and net payout are owners'
+    money passing through, not Omi's.
+    {% if gst_registered %}GST is extracted assuming commission is a GST-inclusive price (÷11 at 10%).{% endif %}
+  </p>
+  {% if company_summary|length == 0 %}
+  <p class="muted">No owner statements generated yet — generate one above first.</p>
+  {% else %}
+  <div class="table-wrap">
+  <table class="table small">
+    <thead>
+      <tr>
+        <th>Month</th>
+        <th>Gross (all properties)</th>
+        <th>Expenses</th>
+        <th>Commission (Omi revenue)</th>
+        {% if gst_registered %}<th>GST on commission</th>{% endif %}
+        <th>Net paid to owners</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in company_summary %}
+      <tr>
+        <td>{{ row.period }}</td>
+        <td>${{ '%.2f'|format(row.gross_revenue) }}</td>
+        <td>-${{ '%.2f'|format(row.total_expenses) }}</td>
+        <td><strong>${{ '%.2f'|format(row.commission_amount) }}</strong></td>
+        {% if gst_registered %}<td>${{ '%.2f'|format(row.gst_on_commission) }}</td>{% endif %}
+        <td>${{ '%.2f'|format(row.net_payout) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+  <p class="muted" style="margin-top:8px">
+    Only counts properties with at least one generated owner statement for that month — this
+    mirrors the statements above, so generate/refresh every property's statement before trusting
+    a given month's total here.
+  </p>
+</section>
+
 {% endblock %}

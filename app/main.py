@@ -39,12 +39,13 @@ from app.models import (
     StaffUser,
     Transaction,
 )
+from app.gst import gst_registered
 from app.pricing import price_breakdown
 from app.public_api import router as public_router
 from app.security import hash_password, verify_password
 from app.reconcile.importer import ImportError_, parse_csv
 from app.reconcile.matching import suggest_bookings
-from app.reconcile.summary import monthly_summary
+from app.reconcile.summary import company_monthly_summary, monthly_summary
 from app.sync.cleaning import sync_cleaning_tasks
 from app.sync.ical_export import build_ics
 from app.sync.ical_sync import recompute_conflicts, sync_all, sync_feed
@@ -956,6 +957,7 @@ def transactions_page(request: Request, error: str = ""):
         summary = monthly_summary(db)
         expenses = db.query(Expense).order_by(Expense.occurred_at.desc()).limit(30).all()
         statements = db.query(OwnerStatement).order_by(OwnerStatement.period.desc()).limit(30).all()
+        company_summary = company_monthly_summary(db)
 
         return templates.TemplateResponse(
             "transactions.html",
@@ -969,6 +971,8 @@ def transactions_page(request: Request, error: str = ""):
                 "error": error,
                 "expenses": expenses,
                 "statements": statements,
+                "company_summary": company_summary,
+                "gst_registered": gst_registered(),
             },
         )
     finally:
