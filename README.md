@@ -1,5 +1,21 @@
 # Omi Holiday — Operations
 
+## 2026-10-23 development candidate (not deployed)
+
+OPS is independent of Hostaway accounts and APIs. Hostaway is a product
+benchmark only. This candidate adds local direct reservations, date-based
+rate/restriction editing, property reporting/CSV, setup checks and a direct
+channel readiness page. Booking.com token authentication and read-only room
+discovery have synthetic contract coverage; no live channel connection is
+claimed. No payment, rate publication or guest-message connection is enabled
+by this release.
+
+See [current delivery and verification](docs/DELIVERY_20261023.md),
+[the 64-entry parity matrix](docs/HOSTAWAY_PARITY_MATRIX_20261023.md) and
+[direct-channel requirements](docs/DIRECT_CHANNELS_20261023.md).
+Older implementation notes below describe historical releases and do not
+mean that this candidate, or all Hostaway features, are live.
+
 The Omi Holiday operations automation system. Live at
 https://ops.omiholiday.com (deployed on Render, free tier + Neon Postgres).
 
