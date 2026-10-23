@@ -344,7 +344,7 @@ with TestClient(app) as c:
  c.cookies.set(SESSION_COOKIE,make_session_cookie("test-admin"))
  for path in ["/healthz","/","/transactions","/cleaning","/operations","/api/ops/overview","/operations/setup","/operations/reservations","/operations/inventory","/operations/reports","/operations/channels","/operations/task-plans","/operations/guest-checkins","/operations/reservation-requests","/operations/resources","/operations/inbox","/operations/agreements","/operations/accounts"]:
   r=c.get(path);assert r.status_code==200,(path,r.status_code,r.text[:300])
- assert c.get('/healthz').json()['release']=='ops-parity-20261023'
+ assert c.get('/healthz').json()['release']=='ops-gapfill-20261023'
  assert "Unknown (1 missing)" in c.get("/transactions").text
  assert c.post("/properties/1/statements/generate",data={"period":"2026-10"}).status_code==200
  assert c.post("/statements/1/finalize",follow_redirects=False).status_code==409
