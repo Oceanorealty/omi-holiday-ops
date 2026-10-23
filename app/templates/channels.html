@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Direct channels — Omi Holiday{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Direct channel connections</h1></div>
+<p>OPS runs independently. No Hostaway account or API is required. iCal remains a separate calendar-only connection.</p>
+<section class="card"><h2>Booking.com Connectivity</h2>
+<p>Provider approval recorded: {{ 'Yes (operator configuration)' if booking_approval_recorded else 'Not recorded' }}. Machine-account credentials: {{ 'Configured' if booking_credentials_present else 'Missing' }}.</p>
+<p>Current implementation supports an explicit room-list read test. Reservation sync, rate publishing and guest messaging are not connected by this test.</p>
+<p><a href="https://developers.booking.com/connectivity/docs" target="_blank" rel="noopener noreferrer">Connectivity documentation</a> · <a href="https://developers.booking.com/connectivity/docs/token-based-authentication" target="_blank" rel="noopener noreferrer">Machine-account token setup</a></p>
+{% if booking_test_available %}<form method="post" action="/operations/channels/booking-com/rooms" class="form-row">
+<input type="hidden" name="token" value="{{ token }}"><label>Booking.com property ID <input name="hotel_id" inputmode="numeric" pattern="[1-9][0-9]{0,19}" maxlength="20" required></label><button class="btn">Read active room types from Booking.com</button></form>
+{% else %}<p>The room test becomes available after Connectivity approval and machine-account configuration.</p>{% endif %}
+{% if tested %}{% if connection_error %}<p role="alert">Room test failed: {{ connection_error }}. Check provider access and configuration.</p>{% else %}<p>Room-list read verified. This does not certify full channel connectivity.</p><ul>{% for room in rooms %}<li>{{ room.room_id }} · {{ room.name }}</li>{% else %}<li>No active room types returned.</li>{% endfor %}</ul>{% endif %}{% endif %}
+</section>
+<section class="card"><h2>Airbnb</h2><p>Awaiting approved API programme access and the documentation for the scopes granted to OPS. No private or guessed API endpoints are configured.</p><a href="https://www.airbnb.com/help/article/3418" target="_blank" rel="noopener noreferrer">Official API programme requirements</a></section>
+<section class="card"><h2>Expedia Group</h2><p>Awaiting connectivity-provider onboarding. Availability and rates, reservation management and product management must be integrated as part of the provider process. Individual property access is not an automatic direct API entitlement.</p><a href="https://developers.expediagroup.com/supply/lodging" target="_blank" rel="noopener noreferrer">Connectivity provider information</a></section>
+<section class="card"><h2>Recent direct-channel tests</h2>{% for run in channel_runs %}<p>{{ run.observed_at }} UTC · {{ run.state }} · {{ run.record_count }} records{% if run.error_code %} · {{ run.error_code }}{% endif %}</p>{% else %}<p>No live direct-channel tests recorded.</p>{% endfor %}</section>
+{% endblock %}

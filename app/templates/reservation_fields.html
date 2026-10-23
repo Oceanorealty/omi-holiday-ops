@@ -1,0 +1,6 @@
+<label>Check-in date <input type="date" name="check_in" value="{{ booking.check_in.date() if booking else '' }}" required></label>
+<label>Check-out date <input type="date" name="check_out" value="{{ booking.check_out.date() if booking else '' }}" required></label>
+<label>Booking amount (AUD) <input type="number" min="0" max="99999999.99" step="0.01" name="amount" value="{{ booking.amount if booking and booking.amount is not none else '' }}" placeholder="Leave blank if unknown"></label>
+<label>Guest name <input name="guest_name" maxlength="160" value="{{ booking.guest.name or '' if booking and booking.guest else '' }}"></label>
+<label>Guest email <input type="email" name="guest_email" maxlength="254" value="{{ booking.guest.email or '' if booking and booking.guest else '' }}"></label>
+<label>Change note <textarea name="note" minlength="10" maxlength="1000" required></textarea></label>

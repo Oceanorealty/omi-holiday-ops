@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Rates & restrictions — Omi Holiday{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Rates & restrictions</h1></div>
+<p>Manage date overrides for OPS direct quotes and reservations. Channel rate publishing is not connected.</p>
+<section class="card"><h2>Select dates</h2><form method="get" class="form-row">
+<label>Property <select name="property_id">{% for p in properties %}<option value="{{ p.id }}" {% if property and p.id == property.id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label>
+<label>First night <input type="date" name="start" value="{{ start }}" required></label><label>End date (excluded) <input type="date" name="end" value="{{ end }}" required></label><button class="btn">Show dates</button></form></section>
+{% if property %}<section class="card"><h2>Rate guardrails · {{ property.name }}</h2><p>These limits apply after rules and date overrides in OPS quotes and the public calendar. Blank removes the corresponding limit. Manual reservation amounts are negotiated totals and are not automatically repriced.</p>
+<form method="post" action="/operations/pricing-limits" class="form-row"><input type="hidden" name="token" value="{{ limits_token }}"><input type="hidden" name="property_id" value="{{ property.id }}"><label>Minimum nightly rate (AUD) <input name="minimum_rate" type="number" min="0.01" max="99999999.99" step="0.01" value="{{ limits.minimum_rate if limits and limits.minimum_rate is not none else '' }}"></label><label>Maximum nightly rate (AUD) <input name="maximum_rate" type="number" min="0.01" max="99999999.99" step="0.01" value="{{ limits.maximum_rate if limits and limits.maximum_rate is not none else '' }}"></label><label>Reason <input name="note" required minlength="10" maxlength="1000"></label><button class="btn">Save rate guardrails</button></form></section>
+<section class="card"><h2>Apply to {{ property.name }} · {{ start }} → {{ end }}</h2>
+<p>Saving replaces every override and restriction in this range with the values below. Minimum and maximum stay apply to every occupied night; arrival and departure closures apply on their exact dates. Existing reservations are retained.</p>
+<form method="post" class="form-row"><input type="hidden" name="token" value="{{ token }}"><input type="hidden" name="property_id" value="{{ property.id }}"><input type="hidden" name="start" value="{{ start }}"><input type="hidden" name="end" value="{{ end }}">
+<label>Nightly rate (AUD) <input name="nightly_rate" type="number" min="0.01" max="99999999.99" step="0.01" placeholder="Blank: use pricing rules"></label>
+<label>Minimum stay <input name="minimum_stay" type="number" min="1" max="366" value="1" required></label><label>Maximum stay <input name="maximum_stay" type="number" min="1" max="366" placeholder="No maximum"></label>
+<label><input type="checkbox" name="closed_arrival" value="1">Close arrivals</label><label><input type="checkbox" name="closed_departure" value="1">Close departures</label><label><input type="checkbox" name="stop_sell" value="1">Stop sell</label>
+<label>Change note <textarea name="note" minlength="10" maxlength="1000" required></textarea></label>
+<button class="btn primary" name="action" value="save">Apply to selected dates</button><button class="btn" name="action" value="reset">Reset selected dates to defaults</button></form></section>
+<section class="card"><h2>Saved overrides (before guardrails)</h2><div class="table-wrap"><table class="table small"><thead><tr><th>Night</th><th>Rate before guardrails</th><th>Min / max stay</th><th>Arrival closed</th><th>Departure closed</th><th>Stop sell</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{ r.night }}</td><td>{{ r.nightly_rate if r.nightly_rate is not none else 'Pricing rules' }}</td><td>{{ r.minimum_stay }} / {{ r.maximum_stay or '—' }}</td><td>{{ 'Yes' if r.closed_arrival else 'No' }}</td><td>{{ 'Yes' if r.closed_departure else 'No' }}</td><td>{{ 'Yes' if r.stop_sell else 'No' }}</td></tr>{% else %}<tr><td colspan="6">No overrides. Base rates and pricing rules apply.</td></tr>{% endfor %}</tbody></table></div></section>
+<section class="card"><h2>Recent rate changes</h2>{% for e in events %}<p>{{ e.created_at }} UTC · {{ e.actor }}<br>{{ e.note }}</p>{% else %}<p>No recorded changes.</p>{% endfor %}</section>
+{% else %}<p><a href="/properties">Add a property</a> to configure rates.</p>{% endif %}
+{% endblock %}
