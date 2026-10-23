@@ -17,9 +17,10 @@ def guest_context(db, booking, before=None):
     from app.operations.inbox_router import portal_context
     from app.operations.agreements import guest_agreement_context
     from app.operations.billing import guest_billing_context
+    from app.operations.guest_access import portal_fields
     row = db.query(GuestCheckin).filter_by(booking_id=booking.id).first() if booking else None
     can_update=bool(booking and datetime.now(ZoneInfo(booking.property.time_zone)).date()<=booking.check_out.date())
-    return {**portal_context(db,booking,before), **guest_agreement_context(db,booking), **guest_billing_context(db,booking), 'booking': booking, 'arrival_details': row, 'details_current': is_current(booking,row) if booking else False,
+    return {**portal_fields(db,booking), **portal_context(db,booking,before), **guest_agreement_context(db,booking), **guest_billing_context(db,booking), 'booking': booking, 'arrival_details': row, 'details_current': is_current(booking,row) if booking else False,
         'checkin_form_token': checkin_token(db,booking) if can_update and _secret() else ''}
 
 
