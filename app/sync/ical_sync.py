@@ -38,6 +38,9 @@ def sync_feed(db: Session, feed: IcalFeed) -> dict:
     now = datetime.utcnow()
     try:
         events = fetch_and_parse(feed.url)
+        from app.operations.stock import lock_stock, refresh_conflicts
+        lock_stock(db)
+        db.expire_all()
         zone = feed.property.time_zone or "UTC"
         # Validate the entire response before applying any observation.
         normalized = []
@@ -78,6 +81,7 @@ def sync_feed(db: Session, feed: IcalFeed) -> dict:
                 booking.source_missing_since = booking.source_missing_since or now
                 result["missing"] += 1
         feed.last_synced_at, feed.last_sync_error = now, None
+        refresh_conflicts(db)
         db.commit()
     except Exception:
         db.rollback()
@@ -95,15 +99,7 @@ def sync_all(db: Session) -> list[dict]:
 
 
 def recompute_conflicts(db: Session) -> None:
-    # Reset cancelled bookings too, so old conflict flags cannot survive cancellation.
-    db.query(Booking).update({Booking.has_conflict: False})
-    bookings = db.query(Booking).filter(Booking.status == BookingStatus.confirmed).order_by(Booking.property_id, Booking.check_in).all()
-    grouped = {}
-    for b in bookings:
-        grouped.setdefault(b.property_id, []).append(b)
-    for group in grouped.values():
-        for i, a in enumerate(group):
-            for other in group[i + 1:]:
-                if a.check_in < other.check_out and other.check_in < a.check_out:
-                    a.has_conflict = other.has_conflict = True
+    from app.operations.stock import lock_stock,refresh_conflicts
+    lock_stock(db)
+    refresh_conflicts(db)
     db.commit()
