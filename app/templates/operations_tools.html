@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% from '_navigation.html' import groups %}
+{% block title %}Find a tool — Omi Holiday{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Find a tool</h1><p>Choose the job you need to do.</p></div>
+<form role="search" method="get" class="tool-search"><label for="tool-query">Search tools</label><input id="tool-query" type="search" name="q" value="{{ q }}" maxlength="100" placeholder="Try calendar, cleaning, rates or guest"><button class="btn" type="submit">Search</button>{% if q %} <a href="/operations/tools">Clear search</a>{% endif %}</form>
+{% set found = namespace(count=0) %}
+{% for label, links in groups %}{% set matches = namespace(rows=[]) %}{% for href, title, description in links %}{% if not q or q.lower() in (label ~ ' ' ~ title ~ ' ' ~ description).lower() %}{% set matches.rows = matches.rows + [(href,title,description)] %}{% endif %}{% endfor %}
+{% if matches.rows %}<section class="card"><h2>{{ label }}</h2><div class="tool-grid">{% for href, title, description in matches.rows %}{% set found.count = found.count + 1 %}<a class="tool-card" href="{{ href }}"><strong>{{ title }}</strong><span>{{ description }}</span></a>{% endfor %}</div></section>{% endif %}{% endfor %}
+{% if not found.count %}<p role="status">No tools match “{{ q }}”. Try a shorter search or <a href="/operations/tools">browse all tools</a>.</p>{% endif %}
+<p class="muted">Channel connection readiness is shown in Booking channels. A configuration page does not mean an external service is connected.</p>
+{% endblock %}
