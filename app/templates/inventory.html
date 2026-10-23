@@ -2,6 +2,7 @@
 {% block title %}Rates & restrictions — Omi Holiday{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Rates & restrictions</h1></div>
+<p><a href="/operations/booking-windows">Manage booking notice and advance windows</a></p>
 <p>Manage date overrides for OPS direct quotes and reservations. Channel rate publishing is not connected.</p>
 <section class="card"><h2>Select dates</h2><form method="get" class="form-row">
 <label>Property <select name="property_id">{% for p in properties %}<option value="{{ p.id }}" {% if property and p.id == property.id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label>

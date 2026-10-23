@@ -24,6 +24,7 @@
 </section>
 
 {% for p in properties %}
+<p><a href="/operations/custom-fields/property/{{ p.id }}">{{ p.name }} · Custom fields</a></p>
 <section class="card">
   <h2>{{ p.name }}
     {% if p.published %}<span class="tag tag-ok">live on website</span>{% else %}<span class="tag tag-warn">not published</span>{% endif %}
