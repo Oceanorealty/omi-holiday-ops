@@ -4,11 +4,13 @@ import io
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
+from sqlalchemy import or_
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 from app.db import get_db
-from app.models import (Booking, BookingStatus, Cleaner, IcalFeed, InventoryEvent,
+from app.models import (Booking, BookingStatus, Cleaner, Guest, PlatformName, IcalFeed, InventoryEvent,
                         Property, ReservationEvent, StaffUser)
 from app.operations.calendar import calendar_data
 from app.operations.inventory import inventory_rows, inventory_token, save_inventory
@@ -64,19 +66,51 @@ def setup(request: Request, db=Depends(get_db), admin=Depends(require_admin)):
 
 @router.get('/operations/reservations')
 def reservation_list(request: Request, property_id: str = '', status: str = 'confirmed',
+                     q: str = '', channel: str = '', start: str = '', end: str = '', page: int = 1,
                      db=Depends(get_db), admin=Depends(require_admin)):
     property_id = optional_property(property_id)
     if status not in ('confirmed', 'cancelled', 'all'):
         raise HTTPException(422, 'Unknown status')
+    q = q.strip()
+    if len(q) > 120 or not 1 <= page <= 500:
+        raise HTTPException(422, 'Use a search up to 120 characters and a page between 1 and 500')
+    if channel and channel not in {p.value for p in PlatformName}:
+        raise HTTPException(422, 'Unknown booking source')
+    try:
+        lower = date.fromisoformat(start) if start else None
+        upper = date.fromisoformat(end) if end else None
+        if (lower and lower.isoformat() != start) or (upper and upper.isoformat() != end) or (lower and upper and lower >= upper):
+            raise ValueError()
+    except ValueError:
+        raise HTTPException(422, 'Choose valid dates with the end after the first night') from None
     query = db.query(Booking).filter(Booking.is_block.is_(False))
     if property_id is not None:
         selected_property(db, property_id)
         query = query.filter_by(property_id=property_id)
     if status != 'all':
         query = query.filter(Booking.status == BookingStatus(status))
-    rows = query.order_by(Booking.check_in.desc(), Booking.id.desc()).limit(201).all()
+    if channel:
+        query = query.filter(Booking.platform == PlatformName(channel))
+    if lower:
+        query = query.filter(Booking.check_out > datetime.combine(lower, datetime.min.time()))
+    if upper:
+        query = query.filter(Booking.check_in < datetime.combine(upper, datetime.min.time()))
+    if lower or upper:
+        query = query.filter(Booking.check_out > Booking.check_in)
+    if q:
+        pattern = '%' + q.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
+        matches = [Booking.uid.ilike(pattern, escape='\\'),
+                   Booking.guest.has(or_(Guest.name.ilike(pattern, escape='\\'), Guest.email.ilike(pattern, escape='\\')))]
+        if q.isascii() and q.isdigit() and len(q) <= 18:
+            matches.append(Booking.id == int(q))
+        query = query.filter(or_(*matches))
+    rows = query.order_by(Booking.check_in.desc(), Booking.id.desc()).offset((page - 1) * 200).limit(201).all()
+    filters = dict(property_id=property_id or '', status=status, q=q, channel=channel, start=start, end=end)
     return templates.TemplateResponse(request=request, name='reservations.html', context={
         'rows': rows[:200], 'truncated': len(rows) > 200, 'status': status, 'property_id': property_id,
+        **filters, 'page': page, 'channels': [p.value for p in PlatformName],
+        'previous_url': '/operations/reservations?' + urlencode({**filters, 'page': page - 1}) if page > 1 else None,
+        'next_url': '/operations/reservations?' + urlencode({**filters, 'page': page + 1}) if len(rows) > 200 and page < 500 else None,
         'properties': db.query(Property).order_by(Property.name).all(), 'token': reservation_token(admin)})
 
 
