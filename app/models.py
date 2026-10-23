@@ -538,3 +538,213 @@ class WorkOrderCheck(Base):
     checked_by = Column(String, nullable=True)
     checked_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class ReservationEvent(Base):
+    """Append-only local reservation history; deduplicates submitted commands."""
+    __tablename__ = 'reservation_events'
+    id = Column(Integer, primary_key=True)
+    booking_id = Column(Integer, ForeignKey('bookings.id'), nullable=False, index=True)
+    token_digest = Column(String(64), nullable=False, unique=True)
+    actor = Column(String, nullable=False)
+    action = Column(String(24), nullable=False)
+    note = Column(String(1000), nullable=False)
+    before_state = Column(Text, nullable=False)
+    after_state = Column(Text, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class InventoryDay(Base):
+    __tablename__ = 'inventory_days'
+    __table_args__ = (UniqueConstraint('property_id', 'night', name='uq_inventory_property_night'),)
+    id = Column(Integer, primary_key=True)
+    property_id = Column(Integer, ForeignKey('properties.id'), nullable=False, index=True)
+    night = Column(String(10), nullable=False)
+    nightly_rate = Column(Numeric(10, 2), nullable=True)
+    minimum_stay = Column(Integer, nullable=False, default=1)
+    maximum_stay = Column(Integer, nullable=True)
+    closed_arrival = Column(Boolean, nullable=False, default=False)
+    closed_departure = Column(Boolean, nullable=False, default=False)
+    stop_sell = Column(Boolean, nullable=False, default=False)
+
+
+class InventoryEvent(Base):
+    __tablename__ = 'inventory_events'
+    id = Column(Integer, primary_key=True)
+    property_id = Column(Integer, ForeignKey('properties.id'), nullable=False, index=True)
+    token_digest = Column(String(64), nullable=False, unique=True)
+    actor = Column(String, nullable=False)
+    note = Column(String(1000), nullable=False)
+    changes = Column(Text, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class OpsCommand(Base):
+    """Deduplicated administrative changes to reusable operational definitions."""
+    __tablename__ = 'ops_commands'
+    id = Column(Integer, primary_key=True)
+    token_digest = Column(String(64), nullable=False, unique=True)
+    purpose = Column(String(40), nullable=False)
+    actor = Column(String, nullable=False)
+    note = Column(String(1000), nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class ChecklistTemplate(Base):
+    __tablename__ = 'checklist_templates'
+    id = Column(Integer, primary_key=True)
+    name = Column(String(120), nullable=False)
+    items = Column(Text, nullable=False)  # immutable JSON snapshot
+    created_by = Column(String, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class TaskTemplateApplication(Base):
+    __tablename__ = 'task_template_applications'
+    __table_args__ = (UniqueConstraint('work_order_id', 'template_id', name='uq_task_template_application'),)
+    id = Column(Integer, primary_key=True)
+    work_order_id = Column(Integer, ForeignKey('work_orders.id'), nullable=False)
+    template_id = Column(Integer, ForeignKey('checklist_templates.id'), nullable=False)
+
+
+class TaskSchedule(Base):
+    __tablename__ = 'task_schedules'
+    id = Column(Integer, primary_key=True)
+    property_id = Column(Integer, ForeignKey('properties.id'), nullable=False)
+    title = Column(String(160), nullable=False)
+    description = Column(Text, nullable=False, default='')
+    category = Column(String(24), nullable=False)
+    priority = Column(String(16), nullable=False)
+    assignee_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    template_id = Column(Integer, ForeignKey('checklist_templates.id'), nullable=True)
+    checklist_snapshot = Column(Text, nullable=False, default='[]')
+    interval_days = Column(Integer, nullable=False)
+    next_due = Column(String(10), nullable=False)
+    end_date = Column(String(10), nullable=True)
+    active = Column(Boolean, nullable=False, default=True)
+    version = Column(Integer, nullable=False, default=1)
+    created_by = Column(String, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class ScheduledTaskOccurrence(Base):
+    __tablename__ = 'scheduled_task_occurrences'
+    __table_args__ = (UniqueConstraint('schedule_id', 'due_date', name='uq_schedule_due'),)
+    id = Column(Integer, primary_key=True)
+    schedule_id = Column(Integer, ForeignKey('task_schedules.id'), nullable=False)
+    due_date = Column(String(10), nullable=False)
+    work_order_id = Column(Integer, ForeignKey('work_orders.id'), nullable=False, unique=True)
+
+
+class WorkOrderCost(Base):
+    __tablename__ = 'work_order_costs'
+    id = Column(Integer, primary_key=True)
+    work_order_id = Column(Integer, ForeignKey('work_orders.id'), nullable=False, unique=True)
+    amount = Column(Numeric(10, 2), nullable=True)
+    category = Column(String(60), nullable=False, default='maintenance')
+    expense_id = Column(Integer, ForeignKey('expenses.id'), nullable=True, unique=True)
+
+
+class GuestCheckin(Base):
+    __tablename__ = 'guest_checkins'
+    id = Column(Integer, primary_key=True)
+    booking_id = Column(Integer, ForeignKey('bookings.id'), nullable=False, unique=True)
+    contact_name = Column(String(160), nullable=False)
+    contact_phone = Column(String(40), nullable=False, default='')
+    party_size = Column(Integer, nullable=False)
+    arrival_time = Column(String(5), nullable=False, default='')
+    requests = Column(Text, nullable=False, default='')
+    rules_hash = Column(String(64), nullable=False)
+    rules_snapshot = Column(Text, nullable=False)
+    booking_fingerprint = Column(String(64), nullable=False)
+    version = Column(Integer, nullable=False, default=1)
+    submitted_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class GuestCheckinEvent(Base):
+    __tablename__ = 'guest_checkin_events'
+    id = Column(Integer, primary_key=True)
+    booking_id = Column(Integer, ForeignKey('bookings.id'), nullable=False, index=True)
+    token_digest = Column(String(64), nullable=False, unique=True)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class PricingLimit(Base):
+    __tablename__ = 'pricing_limits'
+    property_id = Column(Integer, ForeignKey('properties.id'), primary_key=True)
+    minimum_rate = Column(Numeric(10, 2), nullable=True)
+    maximum_rate = Column(Numeric(10, 2), nullable=True)
+
+
+class ReservationRequest(Base):
+    __tablename__ = 'reservation_requests'
+    id = Column(Integer, primary_key=True)
+    reference = Column(String(64), nullable=False, unique=True)
+    quote_digest = Column(String(64), nullable=False, unique=True)
+    payload_digest = Column(String(64), nullable=False)
+    property_id = Column(Integer, ForeignKey('properties.id'), nullable=False)
+    check_in = Column(String(10), nullable=False)
+    check_out = Column(String(10), nullable=False)
+    guests = Column(Integer, nullable=False)
+    quoted_amount = Column(Numeric(10,2), nullable=False)
+    guest_name = Column(String(160), nullable=False)
+    guest_email = Column(String(254), nullable=False)
+    state = Column(String(24), nullable=False, default='pending')
+    version = Column(Integer, nullable=False, default=1)
+    booking_id = Column(Integer, ForeignKey('bookings.id'), nullable=True, unique=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class StockGuard(Base):
+    __tablename__ = 'stock_guard'
+    id = Column(Integer, primary_key=True)
+    revision = Column(Integer, nullable=False, default=0)
+
+
+class StockResource(Base):
+    __tablename__ = 'stock_resources'
+    id = Column(Integer, primary_key=True)
+    name = Column(String(160), nullable=False)
+    capacity = Column(Integer, nullable=False)
+    time_zone = Column(String(80), nullable=False)
+
+
+class StockBinding(Base):
+    __tablename__ = 'stock_bindings'
+    __table_args__ = (UniqueConstraint('property_id','resource_id',name='uq_stock_binding'),)
+    id = Column(Integer, primary_key=True)
+    property_id = Column(Integer, ForeignKey('properties.id'), nullable=False, index=True)
+    resource_id = Column(Integer, ForeignKey('stock_resources.id'), nullable=False, index=True)
+    quantity = Column(Integer, nullable=False, default=1)
+
+
+class PortalConversation(Base):
+    __tablename__ = 'portal_conversations'
+    id = Column(Integer, primary_key=True)
+    booking_id = Column(Integer, ForeignKey('bookings.id'), nullable=False, unique=True)
+    assignee_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    state = Column(String(16), nullable=False, default='open')
+    version = Column(Integer, nullable=False, default=1)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class PortalMessage(Base):
+    __tablename__ = 'portal_messages'
+    id = Column(Integer, primary_key=True)
+    conversation_id = Column(Integer, ForeignKey('portal_conversations.id'), nullable=False, index=True)
+    kind = Column(String(16), nullable=False)  # guest, reply, internal
+    actor = Column(String(160), nullable=False)
+    body = Column(Text, nullable=False)
+    token_digest = Column(String(64), nullable=False, unique=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class PortalReadCursor(Base):
+    __tablename__ = 'portal_read_cursors'
+    __table_args__ = (UniqueConstraint('conversation_id','actor',name='uq_portal_read_actor'),)
+    id = Column(Integer, primary_key=True)
+    conversation_id = Column(Integer, ForeignKey('portal_conversations.id'), nullable=False)
+    actor = Column(String(160), nullable=False)
+    last_id = Column(Integer, nullable=False, default=0)

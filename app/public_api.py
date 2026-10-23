@@ -16,13 +16,14 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional
+import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.auth import _sign
 from app.db import get_db
-from app.models import Booking, BookingStatus, Property
+from app.models import Booking, BookingStatus, InventoryDay, Property
 from app.pricing import price_breakdown, suggested_price
 
 router = APIRouter(prefix="/api/public")
@@ -63,6 +64,7 @@ def _property_summary(prop: Property) -> dict:
         "currency": "AUD",
         "is_unit": prop.parent_property_id is not None,
         "parent_id": prop.parent_property_id,
+        "reservation_request_url": f"/api/public/reservation-request?property_id={prop.id}",
     }
 
 
@@ -74,17 +76,9 @@ def _published_property_or_404(db: Session, property_id: int) -> Property:
 
 
 def _has_overlapping_booking(db: Session, property_id: int, start_dt: datetime, end_dt: datetime) -> bool:
-    return (
-        db.query(Booking.id)
-        .filter(
-            Booking.property_id == property_id,
-            Booking.status == BookingStatus.confirmed,
-            Booking.check_in < end_dt,
-            Booking.check_out > start_dt,
-        )
-        .first()
-        is not None
-    )
+    from app.operations.stock import available_units
+    try:return available_units(db,property_id,start_dt,end_dt)<1
+    except ValueError:return True
 
 
 @router.get("/listings")
@@ -141,30 +135,41 @@ def get_calendar(
         .all()
     )
 
+    overrides = {row.night: row for row in db.query(InventoryDay).filter(InventoryDay.property_id == property_id,
+        InventoryDay.night >= start_d.isoformat(), InventoryDay.night < end_d.isoformat()).all()}
+    from app.operations.stock import stock_context,units_from_context
+    try:stock=stock_context(db,property_id,start_dt,end_dt)
+    except ValueError:raise HTTPException(409,'Inventory needs review before dates can be displayed') from None
     days = []
     current = start_d
     while current < end_d:
         day_start = datetime.combine(current, datetime.min.time())
         day_end = day_start + timedelta(days=1)
         overlapping = [b for b in bookings if b.check_in < day_end and b.check_out > day_start]
-        blocked = any(b.is_block for b in overlapping)
+        override = overrides.get(current.isoformat())
+        blocked = any(b.is_block for b in overlapping) or bool(override and override.stop_sell)
         reserved = any(not b.is_block for b in overlapping)
+        remaining=units_from_context(stock,day_start,day_end)
 
         if blocked:
             day_status = "blocked"
-        elif reserved:
+        elif remaining<1 and reserved:
             day_status = "reserved"
+        elif remaining<1:
+            day_status = "unavailable"
         else:
             day_status = "available"
 
         price = None
         if day_status == "available":
-            if prop.pricing_mode == "dynamic":
-                price = _money(suggested_price(db, prop, current))
-            else:
-                price = _money(prop.base_nightly_rate)
+            price = _money(suggested_price(db, prop, current))
 
-        days.append({"date": current.isoformat(), "status": day_status, "price": price})
+        days.append({"date": current.isoformat(), "status": day_status, "price": price,
+            "available_units":0 if blocked else remaining,
+            "minimum_stay": override.minimum_stay if override else 1,
+            "maximum_stay": override.maximum_stay if override else None,
+            "closed_arrival": bool(override and override.closed_arrival),
+            "closed_departure": bool(override and override.closed_departure)})
         current += timedelta(days=1)
 
     return _envelope({"property_id": property_id, "days": days})
@@ -186,12 +191,14 @@ def _make_quote_token(
     # expires_at. No endpoint here parses this token back — that's B5.
     payload = "|".join(
         [
+            'quote-v2',
             str(property_id),
             check_in.isoformat(),
             check_out.isoformat(),
             str(guests),
             _money(total) or "NA",
             expires_at.isoformat(),
+            secrets.token_hex(16),
         ]
     )
     return _sign(payload)
@@ -229,6 +236,11 @@ def get_quote(
         co_dt = datetime.combine(co, datetime.min.time())
         if _has_overlapping_booking(db, property_id, ci_dt, co_dt):
             bookable, reason = False, "dates_unavailable"
+
+    from app.operations.inventory import restriction_reason
+    restriction = restriction_reason(db, property_id, ci, co)
+    if bookable and restriction:
+        bookable, reason = False, restriction
 
     components = []
     subtotal = total = None
