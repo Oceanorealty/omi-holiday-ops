@@ -122,9 +122,23 @@ def calendar_context(db, start, end, property_id):
 
 @router.get('/operations/calendar')
 def calendar_page(request: Request, start: date = None, end: date = None, property_id: int = None,
+                  view: str = 'grid',
                   db=Depends(get_db), admin=Depends(require_admin)):
+    if view not in ('grid', 'list'):
+        raise HTTPException(422, 'Choose grid or list view')
     data = calendar_context(db, start, end, property_id)
     data['selected_property_id'] = property_id
+    data['view'] = view
+    first, last = date.fromisoformat(data['start']), date.fromisoformat(data['end'])
+    span = last - first
+    try:
+        data['previous_start'], data['previous_end'] = (first - span).isoformat(), first.isoformat()
+    except OverflowError:
+        data['previous_start'] = None
+    try:
+        data['next_start'], data['next_end'] = last.isoformat(), (last + span).isoformat()
+    except OverflowError:
+        data['next_start'] = None
     return templates.TemplateResponse(request=request, name='operations_calendar.html', context=data)
 
 
