@@ -7,49 +7,37 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=ops-parity-20261023" />
+  <link rel="stylesheet" href="/static/style.css?v=ops-navigation-20261024" />
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="/">
+    <a class="brand" href="/operations">
       <img class="brand-mark" src="/static/omi-mark.png" alt="Omi" />
       <span class="brand-sub">Operations</span>
     </a>
     <input type="checkbox" id="nav-toggle" class="nav-toggle" />
     <label for="nav-toggle" class="nav-toggle-btn" aria-label="Menu"><span></span><span></span><span></span></label>
-    <nav>
-      <a href="/operations/setup" class="{{ 'active' if request.url.path == '/operations/setup' else '' }}">Setup</a>
-      <a href="/operations/channels" class="{{ 'active' if request.url.path == '/operations/channels' else '' }}">Channels</a>
-      <a href="/operations/reservations" class="{{ 'active' if request.url.path.startswith('/operations/reservations') else '' }}">Reservations</a>
-      <a href="/operations/reservation-requests" class="{{ 'active' if request.url.path == '/operations/reservation-requests' else '' }}">Requests</a>
-      <a href="/operations/inventory" class="{{ 'active' if request.url.path == '/operations/inventory' else '' }}">Rates & restrictions</a>
-      <a href="/operations/resources" class="{{ 'active' if request.url.path == '/operations/resources' else '' }}">Shared inventory</a>
-      <a href="/operations/reports" class="{{ 'active' if request.url.path == '/operations/reports' else '' }}">Reports</a>
-      <a href="/operations/tasks" class="{{ 'active' if request.url.path.startswith('/operations/tasks') else '' }}">Tasks</a>
-      <a href="/operations/time-report">Task time report</a>
-      <a href="/operations/task-plans" class="{{ 'active' if request.url.path == '/operations/task-plans' else '' }}">Task plans</a>
-      <a href="/operations/guest-checkins" class="{{ 'active' if request.url.path == '/operations/guest-checkins' else '' }}">Guest arrivals</a>
-      <a href="/operations/guest-access" class="{{ 'active' if request.url.path == '/operations/guest-access' else '' }}">Guest access rules</a>
-      <a href="/operations/inbox" class="{{ 'active' if request.url.path.startswith('/operations/inbox') else '' }}">Portal inbox</a>
-      <a href="/operations/agreements" class="{{ 'active' if request.url.path.startswith('/operations/agreements') else '' }}">Agreements</a>
-      <a href="/operations/accounts" class="{{ 'active' if request.url.path.startswith('/operations/accounts') else '' }}">Booking accounts</a>
-      <a href="/operations/calendar" class="{{ 'active' if request.url.path == '/operations/calendar' else '' }}">Calendar</a>
-      <a href="/operations/calendar-notes" class="{{ 'active' if request.url.path == '/operations/calendar-notes' else '' }}">Calendar notes</a>
-      <a href="/operations" class="{{ 'active' if request.url.path == '/operations' else '' }}">Overview</a>
-      <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">Bookings</a>
-      <a href="/cleaning" class="{{ 'active' if request.url.path == '/cleaning' else '' }}">Cleaning</a>
-      <a href="/transactions" class="{{ 'active' if request.url.path == '/transactions' else '' }}">Finance</a>
-      <a href="/properties" class="{{ 'active' if request.url.path == '/properties' else '' }}">Properties</a>
-      <a href="/pricing" class="{{ 'active' if request.url.path == '/pricing' else '' }}">Pricing</a>
-      <a href="/templates" class="{{ 'active' if request.url.path == '/templates' else '' }}">Message Templates</a>
-      <a href="/staff" class="{{ 'active' if request.url.path == '/staff' else '' }}">Staff</a>
-    <a href="/operations/registration-settings">Online registration</a>
-      <a href="/operations/custom-fields">Custom fields</a></nav>
+    {% from '_navigation.html' import groups, selected %}
+    <nav class="primary-nav" aria-label="Main navigation">
+      <a href="/operations" class="{{ selected(request.url.path, '/operations') if request.url.path == '/operations' else '' }}">Overview</a>
+      {% for label, links in groups %}
+      {% set state = namespace(active=false) %}{% for href, title, description in links %}{% if selected(request.url.path, href)|trim %}{% set state.active = true %}{% endif %}{% endfor %}
+      <details class="nav-group{% if state.active %} current-group{% endif %}">
+        <summary>{{ label }}</summary>
+        <div class="nav-menu">{% for href, title, description in links %}<a href="{{ href }}" class="{{ selected(request.url.path, href) }}"{% if request.url.path == href %} aria-current="page"{% endif %}>{{ title }}</a>{% endfor %}</div>
+      </details>
+      {% endfor %}
+      <a href="/operations/tools" class="{{ 'active' if request.url.path == '/operations/tools' else '' }}">Find a tool</a>
+    </nav>
     <form method="post" action="/logout">
       <button class="logout-btn" type="submit">Sign out</button>
     </form>
   </header>
   <main class="container">
+    {% if request.url.path != '/operations/tools' %}
+    {% for label, links in groups %}{% set state = namespace(active=false) %}{% for href, title, description in links %}{% if selected(request.url.path, href)|trim %}{% set state.active = true %}{% endif %}{% endfor %}
+    {% if state.active %}<nav class="section-nav" aria-label="{{ label }} tools">{% for href, title, description in links %}<a href="{{ href }}" class="{{ selected(request.url.path, href) }}"{% if request.url.path == href %} aria-current="page"{% endif %}>{{ title }}</a>{% endfor %}</nav>{% endif %}{% endfor %}
+    {% endif %}
     {% block content %}{% endblock %}
   </main>
 </body>

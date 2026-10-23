@@ -55,6 +55,11 @@ def workbench(request: Request, db=Depends(get_db), admin=Depends(require_admin)
     return templates.TemplateResponse(request=request, name="operations.html", context=context)
 
 
+@router.get('/operations/tools')
+def tools_page(request: Request, q: str = '', admin=Depends(require_admin)):
+    return templates.TemplateResponse(request=request, name='operations_tools.html', context={'q': q.strip()[:100]})
+
+
 @router.get("/api/ops/overview")
 def workbench_data(db=Depends(get_db), admin=Depends(require_admin)):
     data = overview(db)

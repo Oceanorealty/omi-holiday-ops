@@ -355,3 +355,23 @@ select {
   .form-row > label > input, .form-row > label > select { width: 100%; box-sizing: border-box; }
   .form-row > label > input[type="checkbox"] { width: auto; align-self: flex-start; }
 }
+
+/* Main navigation is scoped so table pagination and calendar links keep their own styling. */
+.primary-nav { align-items:center; }
+.nav-group { position:relative; }
+.nav-group summary { cursor:pointer; color:var(--white); padding:10px; font-size:13px; border-radius:8px; }
+.nav-group.current-group > summary, .nav-group[open] > summary { color:var(--gold); background:rgba(201,168,106,.12); }
+.nav-menu { position:absolute; top:100%; left:0; z-index:20; min-width:230px; padding:8px; border-radius:8px; background:var(--navy); box-shadow:0 8px 24px #0003; }
+.nav-menu a { display:block; text-transform:none; letter-spacing:0; border-radius:6px; }
+.section-nav { display:flex; justify-content:flex-start; flex-wrap:wrap; gap:6px; margin-bottom:24px; }
+.section-nav a { color:var(--navy); background:#eee; text-transform:none; letter-spacing:0; }
+.section-nav a:hover,.section-nav a.active { color:var(--navy); background:#e8d6b4; }
+.tool-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; }
+.tool-card { display:flex; flex-direction:column; gap:8px; padding:16px; border:1px solid #ddd; border-radius:8px; text-decoration:none; color:var(--navy); }
+.tool-card:hover { border-color:var(--gold); background:#faf6ef; }
+.tool-card span { color:#555; font-size:14px; }
+a:focus-visible,summary:focus-visible { outline:3px solid var(--gold); outline-offset:3px; }
+@media(max-width:860px) { .primary-nav { align-items:stretch; } .nav-menu { position:static; box-shadow:none; min-width:0; } .section-nav { display:flex; width:auto; margin-top:0; padding-top:0; border-top:0; } .section-nav a { padding:8px 10px; font-size:13px; } }
+
+.tool-search { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin:20px 0; }
+.tool-search input { padding:10px 12px; border:1px solid #bbb; border-radius:6px; min-width:240px; max-width:100%; }

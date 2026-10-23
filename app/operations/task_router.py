@@ -1,6 +1,8 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Query
+from sqlalchemy import or_
+from urllib.parse import urlencode
 from fastapi.responses import RedirectResponse
 from app.db import get_db
 from app.models import ChecklistTemplate, Property, StaffUser, WorkOrder, WorkOrderCost, WorkOrderEvent, WorkOrderCheck
@@ -11,7 +13,9 @@ router=APIRouter()
 
 
 @router.get('/operations/tasks')
-def task_list(request: Request, status: str='active', property_id: str='', db=Depends(get_db), admin=Depends(require_admin)):
+def task_list(request: Request, status: str='active', property_id: str='', q: str=Query('',max_length=120),
+              priority: str='', assignee: str='', due: str='', page: int=Query(1,ge=1,le=1000000),
+              db=Depends(get_db), admin=Depends(require_admin)):
     try:
         property_id=int(property_id) if property_id else None
         if property_id is not None and property_id<1: raise ValueError()
@@ -22,9 +26,31 @@ def task_list(request: Request, status: str='active', property_id: str='', db=De
         if status not in TRANSITIONS: raise HTTPException(422,'Unknown status')
         query=query.filter(WorkOrder.status==status)
     if property_id is not None: query=query.filter(WorkOrder.property_id==property_id)
-    rows=query.order_by(WorkOrder.due_date.is_(None),WorkOrder.due_date,WorkOrder.id.desc()).limit(101).all()
+    q=q.strip()
+    if q:
+        match=or_(WorkOrder.title.contains(q,autoescape=True),WorkOrder.description.contains(q,autoescape=True))
+        if q.isascii() and q.isdigit() and len(q)<=18: match=or_(match,WorkOrder.id==int(q))
+        query=query.filter(match)
+    if priority:
+        if priority not in PRIORITIES: raise HTTPException(422,'Unknown priority')
+        query=query.filter(WorkOrder.priority==priority)
+    if assignee=='unassigned': query=query.filter(WorkOrder.assignee_id.is_(None))
+    elif assignee:
+        if not assignee.isascii() or not assignee.isdigit() or len(assignee)>18 or int(assignee)<1: raise HTTPException(422,'Invalid assignee')
+        query=query.filter(WorkOrder.assignee_id==int(assignee))
+    today=datetime.now(ZoneInfo('Australia/Brisbane')).date().isoformat()
+    if due not in ('','overdue','today','unscheduled'): raise HTTPException(422,'Unknown due filter')
+    if due=='overdue': query=query.filter(WorkOrder.due_date<today,WorkOrder.status.in_(['open','in_progress']))
+    elif due=='today': query=query.filter(WorkOrder.due_date==today)
+    elif due=='unscheduled': query=query.filter(or_(WorkOrder.due_date.is_(None),WorkOrder.due_date==''))
+    total=query.count(); pages=max(1,(total+49)//50);page=min(page,pages)
+    rows=query.order_by(WorkOrder.due_date.is_(None),WorkOrder.due_date,WorkOrder.id.desc()).offset((page-1)*50).limit(50).all()
+    filters={'status':status,'property_id':property_id or '', 'q':q,'priority':priority,'assignee':assignee,'due':due}
+    page_url=lambda number:'/operations/tasks?'+urlencode({**filters,'page':number})
     return templates.TemplateResponse(request=request,name='operations_tasks.html',context={
-        'staff_names':{s.id:s.name for s in db.query(StaffUser).all()},'rows':rows[:100],'truncated':len(rows)>100,'status':status,'property_id':property_id,
+        'staff_names':{s.id:s.name for s in db.query(StaffUser).all()},'rows':rows,'truncated':False,'status':status,'property_id':property_id,
+        'q':q,'priority_filter':priority,'assignee_filter':assignee,'due_filter':due,'page':page,'pages':pages,'total':total,
+        'previous_url':page_url(page-1) if page>1 else None,'next_url':page_url(page+1) if page<pages else None,
         'today':datetime.now(ZoneInfo('Australia/Brisbane')).date().isoformat(),
         'properties':db.query(Property).order_by(Property.name).all(),
         'staff':db.query(StaffUser).filter_by(active=True).order_by(StaffUser.name).all(),
