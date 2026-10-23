@@ -61,6 +61,12 @@
       {% if booking.property.house_rules %}<label><input type="checkbox" name="acknowledged" value="1" required>I have read the house rules shown above.</label>{% endif %}
       <button class="btn primary">Submit arrival details</button>
     </form></section>{% endif %}
+    {% if stay_agreement %}<section class="card" id="agreement"><h2>{{ stay_agreement_data.title }}</h2><p>Document #{{ stay_agreement.id }} · {{ stay_agreement_state }}</p>
+    {% with data=stay_agreement_data %}{% include 'agreement_snapshot.html' %}{% endwith %}
+    {% if stay_agreement_acceptance %}<p>Acknowledgement recorded for {{ stay_agreement_acceptance.typed_name }} at {{ stay_agreement_acceptance.accepted_at }} UTC. This record applies to the displayed document.</p>{% endif %}
+    <p><a href="/guest/{{ booking.guest_portal_token }}/agreements/{{ stay_agreement.id }}/download">Download document and acknowledgement record (.txt)</a></p>
+    {% if stay_agreement_token %}<form class="ops-task-form" method="post" action="/guest/{{ booking.guest_portal_token }}/agreements/{{ stay_agreement.id }}/accept"><input type="hidden" name="token" value="{{ stay_agreement_token }}"><label for="agreement-guest-name">Your name</label><input id="agreement-guest-name" name="typed_name" required maxlength="160"><label><input type="checkbox" name="acknowledged" value="1" required>I have read and agree to the document shown above.</label><button class="btn primary">Record my acknowledgement</button></form>{% endif %}
+    {% if stay_agreement_history %}<details><summary>Recent previously acknowledged documents (up to 20)</summary>{% for old in stay_agreement_history %}<p><a href="/guest/{{ booking.guest_portal_token }}/agreements/{{ old.id }}/download">Download prior document #{{ old.id }} and its acknowledgement</a></p>{% endfor %}<p>Older records remain available from the Omi team. Prior acknowledgements apply to their original documents.</p></details>{% endif %}</section>{% endif %}
     <section class="card" id="messages"><h2>Messages with the Omi team</h2>
     <p>Replies appear here when the team responds. This page does not send notifications; return here to check replies. For emergencies or urgent help, use the contact details below.</p>
     <p>{{ portal_unread or 0 }} unread replies.</p>

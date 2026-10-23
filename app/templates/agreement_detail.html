@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block title %}Agreement #{{ row.id }} — Omi Holiday{% endblock %}
+{% block content %}<div class="page-head"><h1>{{ data.title }}</h1><a href="/operations/agreements?booking_id={{ row.booking_id }}">Reservation agreements</a></div>
+<section class="card"><p>Document #{{ row.id }} · text revision {{ data.revision }} · {{ state }}</p>
+{% include 'agreement_snapshot.html' %}
+<p>Issued {{ row.created_at }} UTC by {{ row.actor }}.<br>Document SHA-256: <span style="overflow-wrap:anywhere">{{ row.snapshot_hash }}</span></p>
+{% if acceptance %}<p>Acknowledged by entered name {{ acceptance.typed_name }} · {{ acceptance.accepted_at }} UTC. This evidence belongs to this exact document; current reservation status is shown above. Identity was not independently verified.</p>{% endif %}
+{% if withdrawal %}<p>Withdrawn {{ withdrawal.created_at }} UTC by {{ withdrawal.actor }} · {{ withdrawal.note }}. Withdrawal records an operational state; it does not erase an acknowledgement or determine cancellation of contractual obligations.</p>{% endif %}
+<a href="/operations/agreements/{{ row.id }}/download">Download document and acknowledgement record (.txt)</a></section>
+{% if not withdrawal %}<section class="card"><h2>Withdraw from current use</h2><p>The document and any acknowledgement remain stored. Guests cannot acknowledge a withdrawn document. Issue an updated document separately if required.</p><form class="ops-task-form" method="post" action="/operations/agreements/{{ row.id }}/withdraw"><input type="hidden" name="token" value="{{ withdraw_token }}"><label for="agreement-withdraw-note">Reason</label><textarea id="agreement-withdraw-note" name="note" required minlength="10" maxlength="1000"></textarea><button class="btn">Withdraw document</button></form></section>{% endif %}{% endblock %}
