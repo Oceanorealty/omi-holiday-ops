@@ -976,3 +976,28 @@ class BookingWindow(Base):
     minimum_notice_days = Column(Integer, nullable=False, default=0)
     maximum_advance_days = Column(Integer, nullable=True)
     same_day_cutoff = Column(String(5), nullable=False, default='')
+
+
+class PublicPayment(Base):
+    """Durable checkout snapshot; Stripe metadata contains only this opaque ID."""
+
+    __tablename__ = "public_payments"
+
+    id = Column(String(36), primary_key=True)
+    fingerprint = Column(String(64), nullable=False)
+    property_id = Column(Integer, ForeignKey("properties.id"), nullable=False)
+    check_in = Column(DateTime, nullable=False)
+    check_out = Column(DateTime, nullable=False)
+    guests = Column(Integer, nullable=False)
+    guest_name = Column(String(200), nullable=False)
+    guest_email = Column(String(254), nullable=False)
+    guest_phone = Column(String(50), nullable=False, default="")
+    language = Column(String(2), nullable=False, default="en")
+    amount = Column(Numeric(10, 2), nullable=False)
+    currency = Column(String(3), nullable=False, default="AUD")
+    payment_intent_id = Column(String, unique=True, nullable=True)
+    booking_id = Column(Integer, ForeignKey("bookings.id"), unique=True, nullable=True)
+    state = Column(String(32), nullable=False, default="creating")
+    refund_id = Column(String, nullable=True)
+    failure_code = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
