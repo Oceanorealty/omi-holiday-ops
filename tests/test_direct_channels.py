@@ -12,6 +12,30 @@ from app.operations.tasks import form_token
 from test_operations import db
 
 
+def test_product_pages_and_overview_exclude_benchmark_brand_and_preserve_history(db, monkeypatch):
+    from pathlib import Path
+    from app.operations.router import router as operations_router
+    monkeypatch.setenv('SECRET_KEY','synthetic-product-brand-key-'+'x'*32)
+    monkeypatch.setenv('ADMIN_USER','channel-admin')
+    monkeypatch.setenv('ADMIN_PASSWORD','synthetic-only')
+    # Historical research data remains stored, but is not a booking source.
+    db.add_all([IntegrationRun(provider='hostaway',account='synthetic-archive',state='complete'),
+        IntegrationRun(provider='booking_com',account='synthetic-direct',state='rooms_read_verified')])
+    db.commit()
+    app=FastAPI();app.include_router(operations_router);app.include_router(router)
+    app.dependency_overrides[get_db]=lambda:db
+    with TestClient(app) as client:
+        client.cookies.set(SESSION_COOKIE,make_session_cookie('channel-admin'))
+        for path in ('/operations','/operations/channels','/api/ops/overview'):
+            response=client.get(path)
+            assert response.status_code==200 and 'hostaway' not in response.text.lower()
+        runs=client.get('/api/ops/overview').json()['runs']
+        assert [r['provider'] for r in runs]==['booking_com']
+    assert db.query(IntegrationRun).count()==2
+    for template in Path('app/templates').glob('*.html'):
+        assert 'hostaway' not in template.read_text().lower(),template.name
+
+
 class Response:
     def __init__(self, content=b'', status=200):
         self.content, self.status_code, self.closed = content, status, False
@@ -107,7 +131,8 @@ def test_direct_channel_page_requires_no_hostaway_or_provider_credentials(db, mo
         assert client.get('/operations/channels').status_code == 403
         client.cookies.set(SESSION_COOKIE, make_session_cookie('channel-admin'))
         result = client.get('/operations/channels')
-        assert result.status_code == 200 and 'No Hostaway account or API is required' in result.text
+        assert result.status_code == 200 and 'hostaway' not in result.text.lower()
+        assert 'https://omiholiday.com/' in result.text and 'Booking.com' in result.text and 'Airbnb' in result.text
         assert 'No live direct-channel tests recorded.' in result.text
         values = {'token': form_token('channel-admin', purpose='booking-room-test'), 'hotel_id': '123'}
         assert client.post('/operations/channels/booking-com/rooms', data=values).status_code == 409
