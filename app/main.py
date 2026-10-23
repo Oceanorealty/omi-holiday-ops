@@ -67,12 +67,14 @@ from app.operations.channel_router import router as channel_router
 from app.operations.task_plan_router import router as task_plan_router
 from app.operations.guest_checkin_router import router as guest_checkin_router
 from app.operations.inbox_router import router as inbox_router
+from app.operations.agreement_router import router as agreement_router
 from app.operations.reservation_request_router import router as reservation_request_router
 from app.operations.stock_router import router as stock_router
 app.include_router(stock_router)
 app.include_router(reservation_request_router)
 app.include_router(guest_checkin_router)
 app.include_router(inbox_router)
+app.include_router(agreement_router)
 app.include_router(task_plan_router)
 app.include_router(channel_router)
 app.include_router(parity_router)
@@ -259,6 +261,8 @@ def trigger_sync():
 def update_booking_amount(booking_id: int, amount: str = Form("")):
     db = SessionLocal()
     try:
+        from app.operations.stock import lock_stock
+        lock_stock(db)
         booking = db.get(Booking, booking_id)
         if booking:
             try:
@@ -288,6 +292,8 @@ def update_door_code(booking_id: int, door_code: str = Form("")):
 def update_guest(booking_id: int, name: str = Form(""), email: str = Form(""), language: str = Form("en")):
     db = SessionLocal()
     try:
+        from app.operations.stock import lock_stock
+        lock_stock(db)
         booking = db.get(Booking, booking_id)
         if booking:
             if not booking.guest:

@@ -748,3 +748,54 @@ class PortalReadCursor(Base):
     conversation_id = Column(Integer, ForeignKey('portal_conversations.id'), nullable=False)
     actor = Column(String(160), nullable=False)
     last_id = Column(Integer, nullable=False, default=0)
+
+
+class AgreementPolicy(Base):
+    __tablename__ = 'agreement_policies'
+    property_id = Column(Integer, ForeignKey('properties.id'), primary_key=True)
+    revision = Column(Integer, nullable=False, default=0)
+    active_version_id = Column(Integer, ForeignKey('agreement_versions.id'), nullable=True)
+
+
+class AgreementVersion(Base):
+    __tablename__ = 'agreement_versions'
+    __table_args__ = (UniqueConstraint('property_id','revision',name='uq_agreement_property_revision'),)
+    id = Column(Integer, primary_key=True)
+    property_id = Column(Integer, ForeignKey('properties.id'), nullable=False)
+    revision = Column(Integer, nullable=False)
+    title = Column(String(160), nullable=False)
+    body = Column(Text, nullable=False)
+    actor = Column(String(160), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class BookingAgreement(Base):
+    __tablename__ = 'booking_agreements'
+    id = Column(Integer, primary_key=True)
+    booking_id = Column(Integer, ForeignKey('bookings.id'), nullable=False, index=True)
+    version_id = Column(Integer, ForeignKey('agreement_versions.id'), nullable=False)
+    snapshot = Column(Text, nullable=False)
+    snapshot_hash = Column(String(64), nullable=False)
+    booking_fingerprint = Column(String(64), nullable=False)
+    actor = Column(String(160), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class AgreementAcceptance(Base):
+    __tablename__ = 'agreement_acceptances'
+    id = Column(Integer, primary_key=True)
+    agreement_id = Column(Integer, ForeignKey('booking_agreements.id'), nullable=False, unique=True)
+    typed_name = Column(String(160), nullable=False)
+    actor = Column(String(160), nullable=False)
+    token_digest = Column(String(64), nullable=False, unique=True)
+    snapshot_hash = Column(String(64), nullable=False)
+    accepted_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class AgreementWithdrawal(Base):
+    __tablename__ = 'agreement_withdrawals'
+    id = Column(Integer, primary_key=True)
+    agreement_id = Column(Integer, ForeignKey('booking_agreements.id'), nullable=False, unique=True)
+    actor = Column(String(160), nullable=False)
+    note = Column(String(1000), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
