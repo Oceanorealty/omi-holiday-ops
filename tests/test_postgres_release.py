@@ -114,7 +114,7 @@ from app.main import app
 from app.auth import SESSION_COOKIE,make_session_cookie
 with TestClient(app) as c:
  c.cookies.set(SESSION_COOKIE,make_session_cookie('release-admin'))
- for path in ['/healthz','/','/transactions','/cleaning','/operations','/operations/calendar','/operations/tasks','/operations/readiness','/operations/setup','/operations/reservations','/operations/inventory','/operations/reports','/operations/channels','/operations/task-plans','/operations/guest-checkins','/operations/reservation-requests','/operations/resources','/operations/inbox','/operations/agreements']:
+ for path in ['/healthz','/','/transactions','/cleaning','/operations','/operations/calendar','/operations/tasks','/operations/readiness','/operations/setup','/operations/reservations','/operations/inventory','/operations/reports','/operations/channels','/operations/task-plans','/operations/guest-checkins','/operations/reservation-requests','/operations/resources','/operations/inbox','/operations/agreements','/operations/accounts']:
   response=c.get(path)
   assert response.status_code==200,(path,response.status_code)
   assert 'no-store' in response.headers['Cache-Control']
@@ -233,3 +233,41 @@ def test_postgres_agreement_acknowledgement_retry_is_atomic(pg):
                 token=token,typed_name='Synthetic holder',acknowledged=True)
     with ThreadPoolExecutor(max_workers=2) as pool:assert len(set(pool.map(acknowledge,range(2))))==1
     with Session(engine) as s:assert s.query(AgreementAcceptance).count()==1
+
+
+def test_postgres_global_payment_reference_and_refund_concurrency(pg):
+    from datetime import timedelta
+    from app.models import BookingAccount,BookingLedgerEntry
+    from app.operations.billing import account_token,add_entry,create_account,create_token,entries,totals
+    engine,_,_=pg;Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        p=Property(name='Synthetic billing property');s.add(p);s.flush()
+        start=datetime.utcnow()+timedelta(days=7)
+        stays=[Booking(property_id=p.id,platform='direct',uid=f'synthetic-billing-{i}',check_in=start,
+            check_out=start+timedelta(days=2),status='confirmed') for i in range(2)]
+        s.add_all(stays);s.commit();ids=[b.id for b in stays]
+        for b in stays:create_account(s,actor='reviewer',booking_id=b.id,token=create_token('reviewer',b),currency='AUD',opening_amount='300',note='Confirmed synthetic currency and opening amount')
+    barrier=threading.Barrier(2)
+    def payment(booking_id):
+        with Session(engine) as s:
+            token=account_token('reviewer',s.get(BookingAccount,booking_id));barrier.wait(timeout=5)
+            try:
+                entity_id=add_entry(s,actor='reviewer',booking_id=booking_id,token=token,kind='payment',amount='100',description='Synthetic payment',
+                    occurred_on=datetime.utcnow().date().isoformat(),reference='globally-unique-synthetic-ref',note='Verified synthetic external receipt')
+                return booking_id,entity_id
+            except TaskError:return None
+    with ThreadPoolExecutor(max_workers=2) as pool:results=list(pool.map(payment,ids))
+    saved=[r for r in results if r];assert len(saved)==1
+    booking_id,payment_id=saved[0];barrier=threading.Barrier(2)
+    def refund(i):
+        with Session(engine) as s:
+            token=account_token('reviewer',s.get(BookingAccount,booking_id));barrier.wait(timeout=5)
+            try:
+                add_entry(s,actor='reviewer',booking_id=booking_id,token=token,kind='refund',amount='60',description='Synthetic refund',
+                    occurred_on=datetime.utcnow().date().isoformat(),reference=f'synthetic-refund-{i}',payment_id=payment_id,note='Verified synthetic external refund')
+                return 'saved'
+            except TaskError:return 'held'
+    with ThreadPoolExecutor(max_workers=2) as pool:assert sorted(pool.map(refund,range(2)))==['held','saved']
+    with Session(engine) as s:
+        assert s.query(BookingLedgerEntry).filter_by(kind='payment').count()==1
+        assert totals(entries(s,booking_id))['refunds']==60
