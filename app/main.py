@@ -69,6 +69,7 @@ from app.operations.guest_checkin_router import router as guest_checkin_router
 from app.operations.inbox_router import router as inbox_router
 from app.operations.agreement_router import router as agreement_router
 from app.operations.billing_router import router as billing_router
+from app.operations.guest_access_router import router as guest_access_router
 from app.operations.reservation_request_router import router as reservation_request_router
 from app.operations.stock_router import router as stock_router
 app.include_router(stock_router)
@@ -77,6 +78,7 @@ app.include_router(guest_checkin_router)
 app.include_router(inbox_router)
 app.include_router(agreement_router)
 app.include_router(billing_router)
+app.include_router(guest_access_router)
 app.include_router(task_plan_router)
 app.include_router(channel_router)
 app.include_router(parity_router)

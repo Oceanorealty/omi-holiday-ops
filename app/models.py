@@ -836,3 +836,27 @@ class BookingAccountStatement(Base):
     snapshot_hash = Column(String(64), nullable=False)
     actor = Column(String(160), nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class GuestAccessRule(Base):
+    __tablename__ = 'guest_access_rules'
+    __table_args__ = (UniqueConstraint('property_id', 'field', name='uq_guest_access_field'),)
+    id = Column(Integer, primary_key=True)
+    property_id = Column(Integer, ForeignKey('properties.id'), nullable=False, index=True)
+    field = Column(String(40), nullable=False)
+    opening_hours = Column(Integer, nullable=True)
+    require_arrival = Column(Boolean, nullable=False, default=False)
+    require_agreement = Column(Boolean, nullable=False, default=False)
+    require_account_clear = Column(Boolean, nullable=False, default=False)
+    hide_after_checkout = Column(Boolean, nullable=False, default=False)
+    version = Column(Integer, nullable=False, default=1)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class GuestAccountClearance(Base):
+    __tablename__ = 'guest_account_clearances'
+    booking_id = Column(Integer, ForeignKey('bookings.id'), primary_key=True)
+    booking_fingerprint = Column(String(64), nullable=False)
+    ledger_hash = Column(String(64), nullable=False)
+    actor = Column(String(160), nullable=False)
+    reviewed_at = Column(DateTime, nullable=False, default=datetime.utcnow)
