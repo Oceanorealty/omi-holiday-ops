@@ -1,0 +1,13 @@
+<input type="hidden" name="token" value="{{ token }}">
+{% if task %}<input type="hidden" name="property_id" value="{{ task.property_id }}">{% else %}
+<label for="property">Property</label><select id="property" name="property_id" required>{% for p in properties %}<option value="{{ p.id }}">{{ p.name }} · #{{ p.id }}</option>{% endfor %}</select>{% endif %}
+<label for="title">Issue</label><input id="title" name="title" maxlength="160" required value="{{ task.title if task else '' }}">
+<label for="description">Details (no passwords, door codes or guest identity documents)</label><textarea id="description" name="description" maxlength="4000">{{ task.description if task else '' }}</textarea>
+<label for="category">Category</label><select id="category" name="category">{% for c in categories %}<option value="{{ c }}" {{ 'selected' if task and task.category==c else '' }}>{{ c.replace('_',' ')|title }}</option>{% endfor %}</select>
+<label for="priority">Priority</label><select id="priority" name="priority">{% for p in priorities %}<option value="{{ p }}" {{ 'selected' if (task and task.priority==p) or (not task and p=='normal') else '' }}>{{ p|title }}</option>{% endfor %}</select>
+<label for="assignee">Responsible staff member</label><select id="assignee" name="assignee_id"><option value="">Unassigned</option>{% for s in staff %}<option value="{{ s.id }}" {{ 'selected' if task and task.assignee_id==s.id else '' }}>{{ s.name }}</option>{% endfor %}</select>
+{% if task and task.assignee_id and task.assignee_id not in staff|map(attribute='id')|list %}<p>Previous assignee is inactive. Choose an active member or leave unassigned.</p>{% endif %}
+<label for="due">Due date (Brisbane)</label><input id="due" name="due_date" type="date" value="{{ task.due_date or '' if task else '' }}">
+{% if task %}<label for="status">Status</label><select id="status" name="status">{% for s in statuses %}<option value="{{ s }}" {{ 'selected' if task.status==s else '' }}>{{ s.replace('_',' ')|title }}</option>{% endfor %}</select>{% endif %}
+<label for="note">Change or completion note</label><textarea id="note" name="note" required minlength="10" maxlength="1000" placeholder="Describe what was reported, checked or completed."></textarea>
+<button class="btn" type="submit">{{ 'Save task' if task else 'Create task' }}</button>

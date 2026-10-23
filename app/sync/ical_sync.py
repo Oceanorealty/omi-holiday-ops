@@ -1,10 +1,6 @@
-"""
-Booking sync engine: fetches each property's iCal feeds, upserts bookings by
-UID (idempotent — safe to re-run), and flags overlapping bookings on the same
-property across different platforms as conflicts.
-"""
-
+"""Source-scoped iCal observations. Missing events are not cancellation evidence."""
 from datetime import datetime, time
+from zoneinfo import ZoneInfo
 
 import requests
 from icalendar import Calendar
@@ -13,10 +9,9 @@ from sqlalchemy.orm import Session
 from app.models import Booking, BookingStatus, IcalFeed
 
 
-def _to_datetime(value) -> datetime:
-    """iCal DTSTART/DTEND can be a date or a datetime; normalize to datetime."""
+def _to_datetime(value, zone="UTC"):
     if isinstance(value, datetime):
-        return value
+        return value.astimezone(ZoneInfo(zone)).replace(tzinfo=None) if value.tzinfo else value
     return datetime.combine(value, time.min)
 
 
@@ -24,111 +19,91 @@ def fetch_and_parse(url: str) -> list[dict]:
     resp = requests.get(url, timeout=20)
     resp.raise_for_status()
     cal = Calendar.from_ical(resp.content)
-
     events = []
+    seen = set()
     for component in cal.walk("VEVENT"):
-        uid = str(component.get("uid"))
-        dtstart = component.get("dtstart")
-        dtend = component.get("dtend")
-        if not uid or dtstart is None or dtend is None:
-            continue
-        events.append(
-            {
-                "uid": uid,
-                "summary": str(component.get("summary") or ""),
-                "check_in": _to_datetime(dtstart.dt),
-                "check_out": _to_datetime(dtend.dt),
-            }
-        )
+        uid = str(component.get("uid") or "").strip()
+        start, end = component.get("dtstart"), component.get("dtend")
+        if not uid or start is None or end is None or uid in seen:
+            raise ValueError("invalid_or_duplicate_calendar_event")
+        seen.add(uid)
+        events.append({"uid": uid, "summary": str(component.get("summary") or ""),
+                       "check_in": start.dt, "check_out": end.dt,
+                       "cancelled": str(component.get("status") or "").upper() == "CANCELLED"})
     return events
 
 
 def sync_feed(db: Session, feed: IcalFeed) -> dict:
-    """Sync a single iCal feed. Returns a summary dict for reporting."""
-    result = {"feed_id": feed.id, "added": 0, "updated": 0, "error": None}
+    result = {"feed_id": feed.id, "added": 0, "updated": 0, "missing": 0, "error": None}
+    now = datetime.utcnow()
     try:
         events = fetch_and_parse(feed.url)
-    except Exception as exc:  # noqa: BLE001 — surface any fetch/parse failure to the UI
-        feed.last_sync_error = str(exc)
-        feed.last_synced_at = datetime.utcnow()
+        zone = feed.property.time_zone or "UTC"
+        # Validate the entire response before applying any observation.
+        normalized = []
+        for e in events:
+            start, end = _to_datetime(e["check_in"], zone), _to_datetime(e["check_out"], zone)
+            if end <= start:
+                raise ValueError("invalid_calendar_range")
+            normalized.append({**e, "check_in": start, "check_out": end})
+        observations = []
+        for e in normalized:
+            existing = db.query(Booking).filter_by(property_id=feed.property_id, platform=feed.platform, uid=e["uid"]).first()
+            if existing and (existing.is_block or existing.source_feed_id not in (None, feed.id)):
+                raise ValueError("calendar_source_collision")
+            if existing and existing.source_feed_id is None:
+                count = db.query(IcalFeed).filter_by(property_id=feed.property_id, platform=feed.platform).count()
+                if count != 1:
+                    raise ValueError("legacy_source_mapping_required")
+            observations.append((e, existing))
+        seen = set()
+        for e, existing in observations:
+            seen.add(e["uid"])
+            if not existing:
+                existing = Booking(property_id=feed.property_id, platform=feed.platform, uid=e["uid"],
+                                   source_feed_id=feed.id, notifications_enabled=False)
+                db.add(existing)
+                result["added"] += 1
+            else:
+                result["updated"] += 1
+            existing.source_feed_id = feed.id
+            existing.summary = e["summary"]
+            existing.check_in, existing.check_out = e["check_in"], e["check_out"]
+            existing.status = BookingStatus.cancelled if e.get("cancelled") else BookingStatus.confirmed
+            existing.source_last_seen_at = now
+            existing.source_missing_since = None
+        stale = db.query(Booking).filter_by(source_feed_id=feed.id, is_block=False).all()
+        for booking in stale:
+            if booking.uid not in seen:
+                booking.source_missing_since = booking.source_missing_since or now
+                result["missing"] += 1
+        feed.last_synced_at, feed.last_sync_error = now, None
         db.commit()
-        result["error"] = str(exc)
-        return result
-
-    seen_uids = set()
-    for event in events:
-        seen_uids.add(event["uid"])
-        existing = (
-            db.query(Booking)
-            .filter_by(property_id=feed.property_id, platform=feed.platform, uid=event["uid"])
-            .first()
-        )
-        if existing:
-            existing.summary = event["summary"]
-            existing.check_in = event["check_in"]
-            existing.check_out = event["check_out"]
-            existing.status = BookingStatus.confirmed
-            result["updated"] += 1
-        else:
-            db.add(
-                Booking(
-                    property_id=feed.property_id,
-                    platform=feed.platform,
-                    uid=event["uid"],
-                    summary=event["summary"],
-                    check_in=event["check_in"],
-                    check_out=event["check_out"],
-                    status=BookingStatus.confirmed,
-                )
-            )
-            result["added"] += 1
-
-    # Anything previously synced from this feed but no longer present upstream
-    # was cancelled or removed — mark it rather than deleting, so history is kept.
-    # Excludes manual blocks: they share a platform value with real feeds
-    # (see main.py's create_block) but were never part of any feed's synced
-    # UIDs, so they'd otherwise get wrongly cancelled on the first sync.
-    stale = (
-        db.query(Booking)
-        .filter_by(property_id=feed.property_id, platform=feed.platform, is_block=False)
-        .filter(~Booking.uid.in_(seen_uids) if seen_uids else True)
-        .all()
-    )
-    for booking in stale:
-        booking.status = BookingStatus.cancelled
-
-    feed.last_synced_at = datetime.utcnow()
-    feed.last_sync_error = None
-    db.commit()
+    except Exception:
+        db.rollback()
+        # Never persist provider errors: they may embed credential-bearing URLs.
+        feed.last_sync_error = "calendar_sync_failed_review_required"
+        db.commit()
+        result.update(added=0, updated=0, missing=0, error=feed.last_sync_error)
     return result
 
 
 def sync_all(db: Session) -> list[dict]:
-    feeds = db.query(IcalFeed).filter_by(active=True).all()
-    results = [sync_feed(db, feed) for feed in feeds]
+    results = [sync_feed(db, f) for f in db.query(IcalFeed).filter_by(active=True).all()]
     recompute_conflicts(db)
     return results
 
 
 def recompute_conflicts(db: Session) -> None:
-    """Flag bookings that overlap another confirmed booking on the same property."""
-    bookings = (
-        db.query(Booking)
-        .filter(Booking.status == BookingStatus.confirmed)
-        .order_by(Booking.property_id, Booking.check_in)
-        .all()
-    )
-
-    by_property: dict[int, list[Booking]] = {}
+    # Reset cancelled bookings too, so old conflict flags cannot survive cancellation.
+    db.query(Booking).update({Booking.has_conflict: False})
+    bookings = db.query(Booking).filter(Booking.status == BookingStatus.confirmed).order_by(Booking.property_id, Booking.check_in).all()
+    grouped = {}
     for b in bookings:
-        by_property.setdefault(b.property_id, []).append(b)
-
-    for prop_bookings in by_property.values():
-        for b in prop_bookings:
-            b.has_conflict = False
-        for i, a in enumerate(prop_bookings):
-            for b in prop_bookings[i + 1 :]:
-                if a.check_in < b.check_out and b.check_in < a.check_out:
-                    a.has_conflict = True
-                    b.has_conflict = True
+        grouped.setdefault(b.property_id, []).append(b)
+    for group in grouped.values():
+        for i, a in enumerate(group):
+            for other in group[i + 1:]:
+                if a.check_in < other.check_out and other.check_in < a.check_out:
+                    a.has_conflict = other.has_conflict = True
     db.commit()
