@@ -1,8 +1,8 @@
 {% extends 'base.html' %}
 {% block title %}Guest arrival details — Omi Holiday{% endblock %}
 {% block content %}<div class="page-head"><h1>Guest arrival details</h1></div>
-<section class="card"><p>Guest submissions are expected-arrival information. They do not prove actual attendance. Prior submissions remain in the audit record when dates or house rules change.</p>
+<p><a href="/operations/registration-settings">Registration requirements and CSV export</a></p><section class="card"><p>Guest submissions are expected-arrival information. They do not prove actual attendance. Prior submissions remain in the audit record when dates or house rules change.</p>
 <form method="get" class="form-row"><label>Property <select name="property_id"><option value="">All properties</option>{% for p in properties %}<option value="{{ p.id }}" {% if p.id==property_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label><button class="btn">Filter</button></form>
 {% for r in rows %}{% set b=bookings[r.booking_id] %}<article><h2>Reservation #{{ b.id }} · {{ b.property.name }}</h2><p>{{ b.check_in.date() }} → {{ b.check_out.date() }} · {{ b.status.value }} · {{ 'Current details' if current[r.id] else 'Needs updated submission' }}</p>
-<p>{{ r.contact_name }} · {{ r.party_size }} guests · expected arrival {{ r.arrival_time or 'Not specified' }} (property local time)<br>Phone: {{ r.contact_phone or 'Not provided' }}<br>Submitted: {{ r.submitted_at }} UTC · revision {{ r.version }}</p><p style="white-space:pre-wrap">{{ r.requests }}</p></article>
+<p><a href="/operations/guest-registrations/{{ b.id }}">Review guest registration and draft history</a></p><p>{{ r.contact_name }} · {{ r.party_size }} guests · expected arrival {{ r.arrival_time or 'Not specified' }} (property local time)<br>Phone: {{ r.contact_phone or 'Not provided' }}<br>Submitted: {{ r.submitted_at }} UTC · revision {{ r.version }}</p><p style="white-space:pre-wrap">{{ r.requests }}</p></article>
 {% else %}<p>No guest arrival details submitted.</p>{% endfor %}{% if truncated %}<p>Showing the 200 most recent submissions. Filter by property.</p>{% endif %}</section>{% endblock %}

@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block title %}Guest access rules — Omi Holiday{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Guest portal access rules</h1></div>
+<section class="card"><p>Choose when each private stay detail is displayed in the guest portal. All selected conditions must be met. These rules affect existing and future stays for this property. They do not control information already sent by email, copied elsewhere or already viewed.</p>
+<form method="get"><label>Property <select name="property_id">{% for p in properties %}<option value="{{ p.id }}"{% if property and p.id==property.id %} selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label><button class="btn">Select property</button></form>
+<p>Without a saved rule, the existing portal display is preserved. No rule processes money, verifies guest identity or changes a booking.</p></section>
+{% if property %}{% for field,title in fields.items() %}{% set rule=rules.get(field) %}<section class="card"><h2>{{ title }} · {{ property.name }}</h2>
+<p>{{ 'Rule revision ' ~ rule.version if rule else 'No saved rule — current display preserved' }}</p>
+<form method="post" action="/operations/guest-access/{{ property.id }}/{{ field }}">
+<input type="hidden" name="token" value="{{ tokens[field] }}">
+<label>Show from this many hours before check-in (blank: no time gate)<input name="opening_hours" type="number" min="0" max="8760" step="1" value="{{ rule.opening_hours if rule and rule.opening_hours is not none else '' }}"></label>
+<p class="muted">Check-in and checkout use the property's stored local times ({{ property.time_zone }}). Confirm the timezone before enabling time rules.</p>
+<label><input type="checkbox" name="require_arrival" value="1"{% if rule and rule.require_arrival %} checked{% endif %}>Require current arrival details and house-rule acknowledgement</label>
+<label><input type="checkbox" name="require_agreement" value="1"{% if rule and rule.require_agreement %} checked{% endif %}>Require acknowledgement of the current issued agreement</label>
+<label><input type="checkbox" name="require_account_clear" value="1"{% if rule and rule.require_account_clear %} checked{% endif %}>Require a cleared booking account reviewed against the current stay</label>
+<p class="muted">The account must contain an active charge, have no balance due and have an operator's current account review. Manual records do not independently verify a bank transfer. Changes to stay details or account entries require a fresh review.</p>
+<label><input type="checkbox" name="hide_after_checkout" value="1"{% if rule and rule.hide_after_checkout %} checked{% endif %}>Hide from checkout time onward</label>
+<label>Reason (internal)<textarea name="note" minlength="10" maxlength="1000" required></textarea></label><button class="btn">Save {{ title }} rule</button>
+</form></section>{% endfor %}{% else %}<p>Create a property before configuring guest access.</p>{% endif %}
+{% endblock %}

@@ -20,26 +20,28 @@
     <div class="page-head"><h1>{{ booking.property.name }}</h1></div>
     <p class="muted">{{ booking.check_in.strftime('%Y-%m-%d') }} → {{ booking.check_out.strftime('%Y-%m-%d') }}</p>
 
-    {% if booking.door_code %}
+    {% if released_fields.get('door_code') %}
     <section class="card">
       <h2>Door code</h2>
-      <p style="font-size:28px;font-family:var(--font-display)">{{ booking.door_code }}</p>
+      <p style="font-size:28px;font-family:var(--font-display)">{{ released_fields.get('door_code') }}</p>
     </section>
     {% endif %}
 
-    {% if booking.property.check_in_instructions %}
+    {% if released_fields.get('check_in_instructions') %}
     <section class="card">
       <h2>Check-in instructions</h2>
-      <p style="white-space:pre-line">{{ booking.property.check_in_instructions }}</p>
+      <p style="white-space:pre-line">{{ released_fields.get('check_in_instructions') }}</p>
     </section>
     {% endif %}
 
-    {% if booking.property.wifi_info %}
+    {% if released_fields.get('wifi_info') %}
     <section class="card">
       <h2>WiFi</h2>
-      <p style="white-space:pre-line">{{ booking.property.wifi_info }}</p>
+      <p style="white-space:pre-line">{{ released_fields.get('wifi_info') }}</p>
     </section>
     {% endif %}
+
+    {% for field,state in guest_access_status.items() %}{% if not state.allowed %}<section class="card"><h2>{{ {'door_code':'Door code','wifi_info':'WiFi','check_in_instructions':'Check-in instructions'}[field] }}</h2><p>Not yet available. {{ state.reasons|join(' · ') }}.</p></section>{% endif %}{% endfor %}
 
     {% if booking.property.house_rules %}
     <section class="card">
@@ -48,8 +50,8 @@
     </section>
     {% endif %}
 
-    {% if checkin_form_token %}<section class="card"><h2>Arrival details</h2>
-    {% if arrival_details %}<p>{{ 'Details submitted' if details_current else 'Stay dates or house rules changed — please review and resubmit' }} · {{ arrival_details.submitted_at }} UTC</p>{% endif %}
+    {% if checkin_form_token %}<section class="card"><h2>Arrival details</h2><p><a href="/guest/{{ booking.guest_portal_token }}/registration">Complete guest registration: adult names and property questions</a></p>
+    {% if arrival_details %}<p>{{ 'Details submitted' if details_current else 'Arrival details or registration requirements need review — complete both forms with matching guest counts' }} · {{ arrival_details.submitted_at }} UTC</p>{% endif %}
     <p>Share your expected arrival details. Submitting this form does not record actual arrival or change your reservation.</p>
     <form class="ops-task-form" method="post" action="/guest/{{ booking.guest_portal_token }}/check-in">
       <input type="hidden" name="token" value="{{ checkin_form_token }}">

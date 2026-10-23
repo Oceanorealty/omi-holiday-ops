@@ -42,7 +42,10 @@ def checkin_token(db, booking):
 
 
 def is_current(booking, row):
-    return bool(row and row.booking_fingerprint == booking_fingerprint(booking) and row.rules_hash == rules_hash(booking))
+    from sqlalchemy.orm import object_session
+    from app.operations.registration import registration_current
+    db=object_session(booking)
+    return bool(row and row.booking_fingerprint == booking_fingerprint(booking) and row.rules_hash == rules_hash(booking) and (db is None or registration_current(db,booking)))
 
 
 def submit_checkin(db, *, portal_token, token, contact_name, contact_phone, party_size, arrival_time, requests, acknowledged):

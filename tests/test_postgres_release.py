@@ -114,7 +114,7 @@ from app.main import app
 from app.auth import SESSION_COOKIE,make_session_cookie
 with TestClient(app) as c:
  c.cookies.set(SESSION_COOKIE,make_session_cookie('release-admin'))
- for path in ['/healthz','/','/transactions','/cleaning','/operations','/operations/calendar','/operations/tasks','/operations/readiness','/operations/setup','/operations/reservations','/operations/inventory','/operations/reports','/operations/channels','/operations/task-plans','/operations/guest-checkins','/operations/reservation-requests','/operations/resources','/operations/inbox','/operations/agreements','/operations/accounts']:
+ for path in ['/healthz','/','/transactions','/cleaning','/operations','/operations/calendar','/operations/tasks','/operations/readiness','/operations/setup','/operations/reservations','/operations/inventory','/operations/reports','/operations/channels','/operations/task-plans','/operations/guest-checkins','/operations/guest-access','/operations/calendar-notes','/operations/time-report','/operations/calendar-period','/operations/custom-fields','/operations/custom-fields/search','/operations/custom-fields/import','/operations/registration-settings','/operations/booking-windows','/operations/reservation-requests','/operations/resources','/operations/inbox','/operations/agreements','/operations/accounts']:
   response=c.get(path)
   assert response.status_code==200,(path,response.status_code)
   assert 'no-store' in response.headers['Cache-Control']
@@ -271,3 +271,148 @@ def test_postgres_global_payment_reference_and_refund_concurrency(pg):
     with Session(engine) as s:
         assert s.query(BookingLedgerEntry).filter_by(kind='payment').count()==1
         assert totals(entries(s,booking_id))['refunds']==60
+
+
+def test_postgres_guest_access_rule_concurrent_version_update(pg):
+    from app.models import GuestAccessRule
+    from app.operations.guest_access import rule_token,save_rule
+    engine,_,_=pg;Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        p=Property(name='Synthetic portal access property');s.add(p);s.commit();property_id=p.id
+        token=rule_token('reviewer',property_id,'door_code',None)
+    barrier=threading.Barrier(2)
+    def update_rule(i):
+        with Session(engine) as s:
+            barrier.wait(timeout=5)
+            try:
+                save_rule(s,actor='reviewer',property_id=property_id,field='door_code',token=token,opening_hours=str(i),
+                    require_arrival=True,require_agreement=False,require_account_clear=False,hide_after_checkout=True,
+                    note='Synthetic concurrent access rule update')
+                return 'saved'
+            except TaskError:return 'held'
+    with ThreadPoolExecutor(max_workers=2) as pool:assert sorted(pool.map(update_rule,[24,48]))==['held','saved']
+    with Session(engine) as s:
+        rule=s.query(GuestAccessRule).one();assert rule.version==1 and rule.require_arrival and rule.hide_after_checkout
+
+
+def test_postgres_calendar_note_concurrent_range_write(pg):
+    from app.models import CalendarNote,CalendarNoteChange
+    from app.operations.calendar_notes import notes_token,save_notes
+    engine,_,_=pg;Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        p=Property(name='Synthetic note property');s.add(p);s.commit();property_id=p.id
+        token=notes_token(s,'reviewer',property_id,'2026-11-10','2026-11-13')
+    barrier=threading.Barrier(2)
+    def write_notes(i):
+        with Session(engine) as s:
+            barrier.wait(timeout=5)
+            try:
+                save_notes(s,actor='reviewer',property_id=property_id,start='2026-11-10',end='2026-11-13',
+                    token=token,action='replace',body=f'Synthetic note {i}',note='Synthetic concurrent calendar note update')
+                return 'saved'
+            except TaskError:return 'held'
+    with ThreadPoolExecutor(max_workers=2) as pool:assert sorted(pool.map(write_notes,[1,2]))==['held','saved']
+    with Session(engine) as s:
+        assert s.query(CalendarNote).count()==3 and s.query(CalendarNoteChange).count()==1
+        assert len({r.body for r in s.query(CalendarNote).all()})==1
+
+
+def test_postgres_staff_timer_cannot_start_on_two_tasks(pg):
+    from app.models import StaffUser,TaskTimeEntry
+    from app.operations.task_time import record_time,time_token
+    engine,_,_=pg;Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        p=Property(name='Synthetic timer listing');s.add(p);s.flush()
+        worker=StaffUser(name='Synthetic worker',username='timer-worker',password_hash='synthetic-no-login');s.add(worker);s.flush();worker_id=worker.id
+        tasks=[WorkOrder(property_id=p.id,title=f'Synthetic timer {i}',status='in_progress') for i in range(2)]
+        s.add_all(tasks);s.commit();ids=[t.id for t in tasks]
+    barrier=threading.Barrier(2)
+    def start(task_id):
+        with Session(engine) as s:
+            token=time_token('reviewer',s.get(WorkOrder,task_id));barrier.wait(timeout=5)
+            try:
+                record_time(s,actor='reviewer',task_id=task_id,token=token,action='start',worker_id=worker_id,note='Start synthetic concurrent worker timer')
+                return 'saved'
+            except TaskError:return 'held'
+    with ThreadPoolExecutor(max_workers=2) as pool:assert sorted(pool.map(start,ids))==['held','saved']
+    with Session(engine) as s:assert s.query(TaskTimeEntry).count()==1
+
+
+def test_postgres_custom_field_competing_values(pg):
+    from app.models import CustomFieldValue,CustomFieldChange
+    from app.operations.custom_fields import create_definition,value_token,save_values
+    engine,_,_=pg;Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        p=Property(name='Synthetic custom field concurrency');s.add(p);s.commit();property_id=p.id
+        field_id=create_definition(s,actor='reviewer',token=form_token('reviewer',purpose='custom-field-create'),scope='property',key='inspection',label='Inspection',kind='text',options='',note='Synthetic field concurrency setup')
+        token=value_token(s,'reviewer','property',property_id)
+    barrier=threading.Barrier(2)
+    def competing(value):
+        with Session(engine) as s:
+            barrier.wait(timeout=5)
+            try:
+                save_values(s,actor='reviewer',scope='property',entity_id=property_id,token=token,values={field_id:value},note='Synthetic competing field update')
+                return 'saved'
+            except TaskError:return 'stale'
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(competing,['First value','Second value']))==['saved','stale']
+    with Session(engine) as s:
+        assert s.query(CustomFieldValue).one().value in ('First value','Second value')
+        assert s.query(CustomFieldChange).count()==1
+
+
+def test_postgres_registration_concurrent_submissions(pg):
+    from datetime import timedelta
+    from app.models import PlatformName,BookingStatus,GuestRegistration,GuestRegistrationEvent
+    from app.operations.registration import configure,config_token,registration_token,save_registration
+    engine,_,_=pg;Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        p=Property(name='Synthetic registration concurrency',time_zone='Australia/Brisbane',max_guests=2);s.add(p);s.flush()
+        b=Booking(property_id=p.id,platform=PlatformName.direct,status=BookingStatus.confirmed,check_in=datetime.utcnow()+timedelta(days=7),check_out=datetime.utcnow()+timedelta(days=9),guest_portal_token='synthetic-registration-pg',uid='synthetic-registration-pg');s.add(b);s.commit();id=b.id
+        configure(s,actor='reviewer',property_id=p.id,token=config_token(s,'reviewer',p.id),require_adults=True,questions='',note='Synthetic registration requirements')
+        token=registration_token(s,b)
+    barrier=threading.Barrier(2)
+    def competing(name):
+        with Session(engine) as s:
+            barrier.wait(timeout=5)
+            try:
+                save_registration(s,portal_token='synthetic-registration-pg',token=token,action='submit',adult_names=name,children=0,party_size=1,answers={},confirmed=True)
+                return 'saved'
+            except TaskError:return 'stale'
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(competing,['Synthetic first','Synthetic second']))==['saved','stale']
+    with Session(engine) as s:
+        assert s.get(GuestRegistration,id).version==1
+        assert s.query(GuestRegistrationEvent).count()==1
+
+
+def test_postgres_custom_field_import_atomic_concurrency_and_literal_search(pg):
+    from app.models import CustomFieldValue,OpsCommand
+    from app.operations.custom_fields import create_definition
+    from app.operations.custom_field_import import preview_import,apply_import
+    from app.operations.custom_field_search import search_page
+    engine,_,_=pg;Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        properties=[Property(name='Synthetic import first'),Property(name='Synthetic import second')];s.add_all(properties);s.commit()
+        ids=[p.id for p in properties]
+        create_definition(s,actor='reviewer',token=form_token('reviewer',purpose='custom-field-create'),scope='property',key='imported',label='Imported',kind='text',options='',note='Synthetic batch field definition')
+        plans=[]
+        for value in ['Literal 100%_A','Second value']:
+            content=('record_type,record_id,field_key,value\n'+''.join(f'property,{id},imported,{value}\n' for id in ids)).encode()
+            plans.append(preview_import(s,'reviewer',content))
+    barrier=threading.Barrier(2)
+    def competing(plan):
+        with Session(engine) as s:
+            barrier.wait(timeout=5)
+            try:
+                apply_import(s,actor='reviewer',plan=plan['plan'],token=plan['token'],note='Reviewed synthetic concurrent batch')
+                return 'saved'
+            except TaskError:return 'stale'
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(competing,plans))==['saved','stale']
+    with Session(engine) as s:
+        rows=s.query(CustomFieldValue).all();assert len(rows)==2 and len({r.value for r in rows})==1
+        assert s.query(OpsCommand).filter_by(purpose='custom-import').count()==1
+        if rows[0].value=='Literal 100%_A':
+            assert len(search_page(s,scope='property',needle='100%_A')['rows'])==2
+            assert search_page(s,scope='property',needle='100%_a')['rows']==[]

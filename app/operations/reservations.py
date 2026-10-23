@@ -102,7 +102,7 @@ def save_reservation(db, *, actor, entity_id, token, property_id, check_in='', c
                 start, end = stay_dates(check_in, check_out)
                 total = money(amount)
             from app.operations.inventory import restriction_reason
-            reason = restriction_reason(db, property_id, start.date(), end.date())
+            reason = restriction_reason(db, property_id, start.date(), end.date(), check_window=(row is None or action=='restore' or row.check_in!=start or row.check_out!=end))
             if reason:
                 raise TaskError('Stay restrictions prevent this booking: ' + reason)
             if available_units(db,property_id,start,end,exclude_id=entity_id)<1:

@@ -140,6 +140,8 @@ def get_calendar(
     from app.operations.stock import stock_context,units_from_context
     try:stock=stock_context(db,property_id,start_dt,end_dt)
     except ValueError:raise HTTPException(409,'Inventory needs review before dates can be displayed') from None
+    from app.operations.booking_windows import window_context,window_reason
+    booking_window=window_context(db,property_id)
     days = []
     current = start_d
     while current < end_d:
@@ -164,11 +166,13 @@ def get_calendar(
         if day_status == "available":
             price = _money(suggested_price(db, prop, current))
 
+        window_restriction=window_reason(db,property_id,current,context=booking_window) if booking_window is not None else None
         days.append({"date": current.isoformat(), "status": day_status, "price": price,
             "available_units":0 if blocked else remaining,
             "minimum_stay": override.minimum_stay if override else 1,
             "maximum_stay": override.maximum_stay if override else None,
-            "closed_arrival": bool(override and override.closed_arrival),
+            "closed_arrival": bool(override and override.closed_arrival) or bool(window_restriction),
+            "booking_window_reason":window_restriction,
             "closed_departure": bool(override and override.closed_departure)})
         current += timedelta(days=1)
 

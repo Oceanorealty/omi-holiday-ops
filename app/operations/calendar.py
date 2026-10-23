@@ -1,7 +1,7 @@
 """Read-only local calendar. Counts reserved nights, never claims actual occupancy."""
 from datetime import date, datetime, timedelta
 from sqlalchemy import or_
-from app.models import Booking, BookingStatus, InventoryDay, Property
+from app.models import Booking, BookingStatus, InventoryDay, Property, CalendarNote
 from app.operations.stock import stock_context,units_from_context,context_conflicts,inventory_interval
 
 
@@ -21,9 +21,12 @@ def calendar_data(db, start: date, end: date, property_id=None):
     stops = {(r.property_id, r.night) for r in db.query(InventoryDay).filter(
         InventoryDay.property_id.in_(ids), InventoryDay.night >= start.isoformat(),
         InventoryDay.night < end.isoformat(), InventoryDay.stop_sell.is_(True)).all()}
+    notes = {(r.property_id, r.night): r.body for r in db.query(CalendarNote).filter(
+        CalendarNote.property_id.in_(ids), CalendarNote.night >= start.isoformat(),
+        CalendarNote.night < end.isoformat()).all()}
     lower, upper = datetime.combine(start, datetime.min.time()), datetime.combine(end, datetime.min.time())
     bookings = db.query(Booking).filter(Booking.property_id.in_(ids), Booking.status == BookingStatus.confirmed,
-        Booking.check_in < upper, or_(Booking.check_out > lower, Booking.check_out <= Booking.check_in)
+        Booking.check_in < upper, or_(Booking.check_out >= lower, Booking.check_out <= Booking.check_in)
         ).order_by(Booking.id).limit(5001).all()
     if len(bookings) > 5000:
         raise ValueError('Too many records; select one property or a shorter period.')
@@ -48,7 +51,7 @@ def calendar_data(db, start: date, end: date, property_id=None):
             conflict_ids=context_conflicts(stock,day_start,day_end)
             stays = [b for b in overnight if not b.is_block]
             blocks = [b for b in overnight if b.is_block]
-            cells.append({'date': day.isoformat(), 'stop_sell': (prop.id, day.isoformat()) in stops,
+            cells.append({'note_end':(day+timedelta(days=1)).isoformat(),'internal_note':notes.get((prop.id,day.isoformat()),''),'date': day.isoformat(), 'stop_sell': (prop.id, day.isoformat()) in stops,
                 'available_units':0 if (prop.id,day.isoformat()) in stops else units_from_context(stock,day_start,day_end),
                 'booking_ids': [b.id for b in stays],
                 'block_ids': [b.id for b in blocks], 'conflict_ids': sorted(conflict_ids),

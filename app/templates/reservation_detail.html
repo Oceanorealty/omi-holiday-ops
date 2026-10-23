@@ -2,6 +2,7 @@
 {% block title %}Reservation #{{ booking.id }} — Omi Holiday{% endblock %}
 {% block content %}
 <p><a href="/operations/reservations">← Reservations</a></p>
+<p><a href="/operations/custom-fields/reservation/{{ booking.id }}">Custom fields</a></p>
 <div class="page-head"><h1>Reservation #{{ booking.id }}</h1></div>
 <p><a href="/operations/inbox/{{ booking.id }}">Open portal conversation</a></p>
 <p><a href="/operations/agreements?booking_id={{ booking.id }}">Review or issue stay agreement</a></p>

@@ -8,6 +8,7 @@ from app.models import Booking,BookingAccount,BookingAccountStatement,BookingLed
 from app.operations.billing import (CURRENCIES,account_token,add_entry,create_account,create_token,
     entries,issue_statement,totals,void_entry)
 from app.operations.guest_checkin import find_guest_booking
+from app.operations.guest_access import clearance_token,account_is_clear
 from app.operations.parity_router import same_origin
 from app.operations.router import require_admin,templates
 from app.operations.tasks import TaskError
@@ -29,6 +30,7 @@ def account_page(booking_id:int,request:Request,db=Depends(get_db),admin=Depends
     if not booking or booking.is_block:raise HTTPException(404,'Guest reservation not found')
     account=db.get(BookingAccount,booking_id);rows=entries(db,booking_id) if account else []
     return templates.TemplateResponse(request=request,name='booking_account.html',context={
+        'account_clearance_token':clearance_token(db,admin,booking) if account else '', 'account_clearance_current':account_is_clear(db,booking) if account else False,
         'booking':booking,'account':account,'rows':rows,'summary':totals(rows),'currencies':CURRENCIES,
         'today':datetime.now(ZoneInfo(booking.property.time_zone)).date().isoformat(),
         'create_token':create_token(admin,booking) if not account else '',

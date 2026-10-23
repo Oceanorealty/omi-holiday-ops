@@ -52,7 +52,7 @@ from app.sync.ical_export import build_ics
 from app.sync.ical_sync import recompute_conflicts, sync_all, sync_feed
 
 from app.deployment import ensure_release_snapshot
-_release_snapshot = ensure_release_snapshot(engine, snapshot_schema='ops_backup_20261023')
+_release_snapshot = ensure_release_snapshot(engine, snapshot_schema='ops_backup_20261023_gapfill')
 print(f"OPS_RELEASE_SNAPSHOT state={_release_snapshot['state']} tables={_release_snapshot['tables']}", flush=True)
 migrate.run(engine)
 Base.metadata.create_all(bind=engine)
@@ -69,14 +69,30 @@ from app.operations.guest_checkin_router import router as guest_checkin_router
 from app.operations.inbox_router import router as inbox_router
 from app.operations.agreement_router import router as agreement_router
 from app.operations.billing_router import router as billing_router
+from app.operations.guest_access_router import router as guest_access_router
+from app.operations.calendar_note_router import router as calendar_note_router
+from app.operations.task_time_router import router as task_time_router
+from app.operations.calendar_period_router import router as calendar_period_router
+from app.operations.task_attachment_router import router as task_attachment_router
 from app.operations.reservation_request_router import router as reservation_request_router
 from app.operations.stock_router import router as stock_router
+from app.operations.custom_field_router import router as custom_field_router
+app.include_router(custom_field_router)
+from app.operations.registration_router import router as registration_router
+app.include_router(registration_router)
+from app.operations.booking_window_router import router as booking_window_router
+app.include_router(booking_window_router)
 app.include_router(stock_router)
 app.include_router(reservation_request_router)
 app.include_router(guest_checkin_router)
 app.include_router(inbox_router)
 app.include_router(agreement_router)
 app.include_router(billing_router)
+app.include_router(guest_access_router)
+app.include_router(calendar_note_router)
+app.include_router(task_time_router)
+app.include_router(calendar_period_router)
+app.include_router(task_attachment_router)
 app.include_router(task_plan_router)
 app.include_router(channel_router)
 app.include_router(parity_router)
@@ -140,7 +156,7 @@ def stop_scheduler():
 def healthz():
     # Render calls this frequently. Keep liveness cheap so it does not keep
     # a scale-to-zero database awake around the clock.
-    return {"status": "ok", "release": "ops-parity-20261023"}
+    return {"status": "ok", "release": "ops-gapfill-20261023"}
 
 
 @app.get("/operations/readiness")
