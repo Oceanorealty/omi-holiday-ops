@@ -799,3 +799,40 @@ class AgreementWithdrawal(Base):
     actor = Column(String(160), nullable=False)
     note = Column(String(1000), nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class BookingAccount(Base):
+    __tablename__ = 'booking_accounts'
+    booking_id = Column(Integer, ForeignKey('bookings.id'), primary_key=True)
+    currency = Column(String(3), nullable=False)
+    version = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class BookingLedgerEntry(Base):
+    __tablename__ = 'booking_ledger_entries'
+    id = Column(Integer, primary_key=True)
+    booking_id = Column(Integer, ForeignKey('booking_accounts.booking_id'), nullable=False, index=True)
+    kind = Column(String(16), nullable=False)
+    amount = Column(Numeric(12,2), nullable=False)
+    description = Column(String(240), nullable=False)
+    occurred_on = Column(String(10), nullable=False)
+    actor = Column(String(160), nullable=False)
+    evidence_note = Column(String(1000), nullable=False, default='')
+    reference = Column(String(120), nullable=True)
+    reference_digest = Column(String(64), nullable=True, index=True)
+    payment_id = Column(Integer, ForeignKey('booking_ledger_entries.id'), nullable=True)
+    voids_id = Column(Integer, ForeignKey('booking_ledger_entries.id'), nullable=True, unique=True)
+    receipt_snapshot = Column(Text, nullable=True)
+    receipt_snapshot_hash = Column(String(64), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class BookingAccountStatement(Base):
+    __tablename__ = 'booking_account_statements'
+    id = Column(Integer, primary_key=True)
+    booking_id = Column(Integer, ForeignKey('booking_accounts.booking_id'), nullable=False, index=True)
+    snapshot = Column(Text, nullable=False)
+    snapshot_hash = Column(String(64), nullable=False)
+    actor = Column(String(160), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
