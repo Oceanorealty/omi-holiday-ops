@@ -5,6 +5,7 @@
 <div class="page-head"><h1>Reservation #{{ booking.id }}</h1></div>
 <p><a href="/operations/inbox/{{ booking.id }}">Open portal conversation</a></p>
 <p><a href="/operations/agreements?booking_id={{ booking.id }}">Review or issue stay agreement</a></p>
+<p><a href="/operations/accounts/{{ booking.id }}">Charges, external receipts and balance</a></p>
 {% if booking.status.value=='confirmed' and booking.guest_portal_token %}<p><a rel="noreferrer" href="/guest/{{ booking.guest_portal_token }}">Guest stay portal</a> · Keep this private link for the reservation's guest.</p>{% endif %}
 <p>{{ booking.property.name }} · {{ booking.platform.value }} · {{ booking.status.value }}</p>
 {% if editable %}
