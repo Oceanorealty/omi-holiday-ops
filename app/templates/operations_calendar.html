@@ -12,7 +12,9 @@
 .portfolio-calendar .calendar-stay{background:#edf3f8}.portfolio-calendar .calendar-closed{background:#f0eeea}
 .portfolio-calendar .calendar-review{box-shadow:inset 0 0 0 2px #a65c18}
 .portfolio-calendar small,.portfolio-calendar .calendar-record{display:block;margin-top:4px}
-.calendar-controls{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0}
+.calendar-controls{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
+.calendar-controls a{color:#493b27;background:#f0e8d8;border-radius:999px;padding:8px 12px;text-decoration:none}
+.calendar-controls a:focus-visible{outline:2px solid #7f5c1c;outline-offset:2px}
 </style>
 <section class="card">
 <form method="get" action="/operations/calendar">
@@ -20,18 +22,20 @@
 <label for="end">End date (excluded)</label><input id="end" name="end" type="date" required value="{{ end }}">
 {% if selected_property_id %}<input type="hidden" name="property_id" value="{{ selected_property_id }}">{% endif %}
 <input type="hidden" name="view" value="{{ view }}">
+<label><input type="checkbox" name="include_context" value="1" {% if context_enabled %}checked{% endif %}> Show rates, account balances, tasks and calendar-feed status</label>
 <button class="btn" type="submit">Show dates</button>
 </form>
-<p>Up to 62 nights. <a href="/operations/calendar?start={{ start }}&amp;end={{ end }}&amp;view={{ view }}">All properties</a>.</p>
+<p>Up to 62 nights. <a href="/operations/calendar?start={{ start }}&amp;end={{ end }}{% if context_enabled %}&amp;include_context=1{% endif %}&amp;view={{ view }}">All properties</a>.</p>
 {% set scope = '&property_id=' ~ selected_property_id if selected_property_id else '' %}
+{% set context_scope = '&include_context=1' if context_enabled else '' %}
 <nav aria-label="Calendar views and dates" class="calendar-controls">
 <a href="/operations/calendar-period?view=month{{ scope }}&amp;year={{ start[:4] }}&amp;month={{ start[5:7] }}">Monthly calendar</a><a href="/operations/calendar-period?view=year{{ scope }}&amp;year={{ start[:4] }}&amp;month={{ start[5:7] }}">Yearly calendar</a>
-{% if previous_start %}<a href="/operations/calendar?start={{ previous_start }}&amp;end={{ previous_end }}&amp;view={{ view }}{{ scope }}">Previous period</a>{% endif %}
-{% if next_start %}<a href="/operations/calendar?start={{ next_start }}&amp;end={{ next_end }}&amp;view={{ view }}{{ scope }}">Next period</a>{% endif %}
-<a href="/operations/calendar?start={{ start }}&amp;end={{ end }}&amp;view=grid{{ scope }}"{% if view == 'grid' %} aria-current="page"{% endif %}>Portfolio grid</a>
-<a href="/operations/calendar?start={{ start }}&amp;end={{ end }}&amp;view=list{{ scope }}"{% if view == 'list' %} aria-current="page"{% endif %}>Detailed list</a>
+{% if previous_start %}<a href="/operations/calendar?start={{ previous_start }}&amp;end={{ previous_end }}{% if context_enabled %}&amp;include_context=1{% endif %}&amp;view={{ view }}{{ scope }}">Previous period</a>{% endif %}
+{% if next_start %}<a href="/operations/calendar?start={{ next_start }}&amp;end={{ next_end }}{% if context_enabled %}&amp;include_context=1{% endif %}&amp;view={{ view }}{{ scope }}">Next period</a>{% endif %}
+<a href="/operations/calendar?start={{ start }}&amp;end={{ end }}&amp;view=grid{{ scope }}{{ context_scope }}"{% if view == 'grid' %} aria-current="page"{% endif %}>Portfolio grid</a>
+<a href="/operations/calendar?start={{ start }}&amp;end={{ end }}&amp;view=list{{ scope }}{{ context_scope }}"{% if view == 'list' %} aria-current="page"{% endif %}>Detailed list</a>
 </nav>
-<p class="muted">{{ limitations }}</p>
+<details><summary>Calendar data and limits</summary><p class="muted">{{ limitations }}</p>{% if context_error %}<p role="alert">Context could not be shown: {{ context_error }} Inventory remains visible.</p>{% endif %}{% if context_enabled %}<p>Rates are current local AUD suggestions, not the historical booked price or a channel publication receipt. Balances are per-reservation ledger values, not verified bank funds; currencies are never added together. Tasks use their stored Brisbane operational due date. Calendar-feed status is iCal history, not live channel connectivity.</p>{% endif %}</details>
 </section>
 {% if view == 'grid' %}
 <section class="card">
@@ -43,7 +47,7 @@
 <table class="table"><caption>Property-local dates; end date excluded. All values are local inventory, not live channel confirmation.</caption>
 <thead><tr><th scope="col" class="property-column">Property</th>{% for day in dates %}<th scope="col">{{ day }}</th>{% endfor %}</tr></thead>
 <tbody>{% for row in rows %}<tr>
-<th scope="row" class="property-column"><a href="/operations/calendar?start={{ start }}&amp;end={{ end }}&amp;view={{ view }}&amp;property_id={{ row.property_id }}">{{ row.name }}</a><small>#{{ row.property_id }} · {{ row.time_zone }}</small><small>Capacity {{ row.inventory_capacity }}{% if row.shared_inventory %} · shared{% endif %}</small>{% if row.invalid_booking_ids %}<small role="alert">Invalid dates: {{ row.invalid_booking_ids|join(', ') }}</small>{% endif %}</th>
+<th scope="row" class="property-column"><a href="/operations/calendar?start={{ start }}&amp;end={{ end }}{% if context_enabled %}&amp;include_context=1{% endif %}&amp;view={{ view }}&amp;property_id={{ row.property_id }}">{{ row.name }}</a><small>#{{ row.property_id }} · {{ row.time_zone }}</small><small>Capacity {{ row.inventory_capacity }}{% if row.shared_inventory %} · shared{% endif %}</small>{% if context_enabled %}<small><a href="/operations/setup">Calendar feeds</a>: {% for feed in row.feeds %}{{ feed.platform }} · {{ 'inactive' if not feed.active else ('needs review' if feed.needs_review else 'active') }} · {{ feed.last_synced_at or 'never synced' }}{% if not loop.last %}; {% endif %}{% else %}None{% endfor %}</small>{% endif %}{% if row.invalid_booking_ids %}<small role="alert">Invalid dates: {{ row.invalid_booking_ids|join(', ') }}</small>{% endif %}</th>
 {% for day in row.days %}<td class="{% if day.booking_ids %}calendar-stay {% endif %}{% if not day.booking_ids and (day.available_units == 0 or day.stop_sell) %}calendar-closed {% endif %}{% if day.conflict_ids or day.source_review_ids %}calendar-review{% endif %}">
 {% if day.internal_note %}<p style="white-space:pre-wrap"><strong>Note:</strong> {{ day.internal_note }}</p>{% endif %}<a class="calendar-record" href="/operations/calendar-notes?property_id={{ row.property_id }}&amp;start={{ day.date }}&amp;end={{ day.note_end }}">Manage notes</a>
 <strong>{{ day.available_units }} available</strong>{% if day.stop_sell %}<small>Stop sell</small>{% endif %}
@@ -51,20 +55,22 @@
 {% if day.block_ids %}<small>Blocked: {{ day.block_ids|join(', ') }}</small>{% endif %}
 {% if day.arrivals %}<small>Arrivals: {{ day.arrivals|join(', ') }}</small>{% endif %}{% if day.departures %}<small>Departures: {{ day.departures|join(', ') }}</small>{% endif %}
 {% if day.conflict_ids %}<small>Capacity conflict: {{ day.conflict_ids|join(', ') }}</small>{% endif %}{% if day.source_review_ids %}<a class="calendar-record" href="/operations">Source review: {{ day.source_review_ids|join(', ') }}</a>{% endif %}
+{% if context_enabled %}{% include '_calendar_context.html' %}{% endif %}
 </td>{% endfor %}</tr>{% endfor %}</tbody></table></div>
 {% else %}<p>No properties in this selection.</p>{% endif %}
 </section>
 {% else %}
 {% for row in rows %}
 <section class="card">
-<h2><a href="/operations/calendar?start={{ start }}&amp;end={{ end }}&amp;property_id={{ row.property_id }}&amp;view=list">{{ row.name }}</a> · #{{ row.property_id }}</h2>
+<h2><a href="/operations/calendar?start={{ start }}&amp;end={{ end }}&amp;property_id={{ row.property_id }}&amp;view=list{{ context_scope }}">{{ row.name }}</a> · #{{ row.property_id }}</h2>
 <p>Timezone: {{ row.time_zone }}{% if row.parent_property_id %} · Parent listing #{{ row.parent_property_id }}{% endif %}</p>
+{% if context_enabled %}<p>Calendar feeds (iCal): {% for feed in row.feeds %}{{ feed.platform }} · {{ 'inactive' if not feed.active else ('needs review' if feed.needs_review else 'active') }} · {{ feed.last_synced_at or 'never synced' }}{% if not loop.last %}; {% endif %}{% else %}None{% endfor %}</p>{% endif %}
 <p>Local inventory capacity: {{ row.inventory_capacity }}{% if row.shared_inventory %} · Explicit resource bindings apply{% endif %}.</p>
 <p>{{ row.reserved_nights }} reserved nights · {{ row.blocked_nights }} blocked nights · {{ row.stop_sell_nights }} stop-sell nights · {{ row.sellable_nights }} sellable nights · {{ row.conflict_days }} days with overlaps.</p>
 <p>Reserved-night ratio: {% if row.reserved_night_pct is not none %}{{ row.reserved_night_pct }}%{% else %}Not reported for resource-mapped listings, overlaps, invalid or fully unavailable dates{% endif %}. This measures reservations, not actual guest attendance.</p>
 {% if row.invalid_booking_ids %}<p role="alert">Invalid dates need review: {{ row.invalid_booking_ids|join(', ') }}.</p>{% endif %}
-<div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Note</th><th>Reserved</th><th>Blocked</th><th>Available units</th><th>Arrivals / departures</th><th>Review</th></tr></thead><tbody>
-{% for day in row.days %}<tr><td>{{ day.date }}<br><a href="/operations/calendar-notes?property_id={{ row.property_id }}&amp;start={{ day.date }}&amp;end={{ day.note_end }}">Manage notes</a></td><td style="white-space:pre-wrap">{{ day.internal_note or '—' }}</td><td>{{ day.booking_ids|join(', ') or '—' }}</td><td>{{ day.block_ids|join(', ') or '—' }}{% if day.stop_sell %} · Stop sell{% endif %}</td><td>{{ day.available_units }}</td><td>{{ day.arrivals|join(', ') or '—' }} / {{ day.departures|join(', ') or '—' }}</td><td>{% if day.conflict_ids %}Capacity conflict: {{ day.conflict_ids|join(', ') }}. {% endif %}{% if day.source_review_ids %}<a href="/operations">Source review: {{ day.source_review_ids|join(', ') }}</a>{% endif %}</td></tr>{% endfor %}
+<div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Note</th><th>Reserved</th><th>Blocked</th><th>Available units</th><th>Arrivals / departures</th><th>Review</th>{% if context_enabled %}<th>Rates, accounts and tasks</th>{% endif %}</tr></thead><tbody>
+{% for day in row.days %}<tr><td>{{ day.date }}<br><a href="/operations/calendar-notes?property_id={{ row.property_id }}&amp;start={{ day.date }}&amp;end={{ day.note_end }}">Manage notes</a></td><td style="white-space:pre-wrap">{{ day.internal_note or '—' }}</td><td>{{ day.booking_ids|join(', ') or '—' }}</td><td>{{ day.block_ids|join(', ') or '—' }}{% if day.stop_sell %} · Stop sell{% endif %}</td><td>{{ day.available_units }}</td><td>{{ day.arrivals|join(', ') or '—' }} / {{ day.departures|join(', ') or '—' }}</td><td>{% if day.conflict_ids %}Capacity conflict: {{ day.conflict_ids|join(', ') }}. {% endif %}{% if day.source_review_ids %}<a href="/operations">Source review: {{ day.source_review_ids|join(', ') }}</a>{% endif %}</td>{% if context_enabled %}<td>{% include '_calendar_context.html' %}</td>{% endif %}</tr>{% endfor %}
 </tbody></table></div>
 </section>
 {% else %}<section class="card"><p>No properties in this selection.</p></section>{% endfor %}
