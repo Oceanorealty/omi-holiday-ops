@@ -171,3 +171,51 @@ def test_plan_routes_are_authorized_and_have_no_external_send(db,actor):
         result=client.post('/operations/task-plans/generate',data={'token':form_token(actor,purpose='schedule-run'),'through':'2026-11-06'})
         assert result.status_code==200 and '3 tasks generated' in result.text
         assert client.post('/operations/task-plans/generate',data={'token':form_token(actor,purpose='schedule-run'),'through':'2027-01-01'}).status_code==409
+
+
+@pytest.mark.parametrize('anchor,current,every,expected',[
+    ('2028-01-31','2028-01-31',1,'2028-02-29'),
+    ('2028-01-31','2028-02-29',1,'2028-03-31'),
+    ('2027-01-31','2027-02-28',1,'2027-03-31'),
+    ('2028-02-29','2028-02-29',12,'2029-02-28'),
+    ('2028-02-29','2031-02-28',12,'2032-02-29'),
+    ('2026-11-30','2026-11-30',3,'2027-02-28'),
+])
+def test_calendar_recurrence_retains_anchor(anchor,current,every,expected):
+    assert plans.next_calendar_due(date.fromisoformat(anchor),date.fromisoformat(current),every).isoformat()==expected
+
+
+def test_monthly_plan_clamps_and_restores_day_without_duplicate_work(db,actor,monkeypatch):
+    from app.models import TaskScheduleCalendarRule
+    monkeypatch.setattr(plans,'today',lambda:date(2028,1,31))
+    plan_id=plans.create_schedule(db,**schedule_args(db,actor,start_date='2028-01-31',
+        frequency='months',interval_days=1,end_date='2028-03-31'))
+    assert plans.materialize_schedules(db,date(2028,2,29))['generated']==2
+    assert db.get(TaskSchedule,plan_id).next_due=='2028-03-31'
+    assert db.get(TaskScheduleCalendarRule,plan_id).anchor_date=='2028-01-31'
+    assert plans.materialize_schedules(db,date(2028,2,29))['generated']==0
+    monkeypatch.setattr(plans,'today',lambda:date(2028,3,1))
+    assert plans.materialize_schedules(db,date(2028,3,31))['generated']==1
+    assert [o.due_date for o in db.query(ScheduledTaskOccurrence).order_by(ScheduledTaskOccurrence.due_date)]==[
+        '2028-01-31','2028-02-29','2028-03-31']
+    assert not db.get(TaskSchedule,plan_id).active
+    audit=db.query(OpsCommand).filter_by(purpose='schedule-create').one()
+    assert json.loads(audit.payload)['frequency']=='months'
+
+
+def test_weekly_plan_repeats_on_same_weekday_and_preserves_legacy_days(db,actor):
+    from app.models import TaskScheduleCalendarRule
+    plan_id=plans.create_schedule(db,**schedule_args(db,actor,frequency='weeks',interval_days=2))
+    assert db.get(TaskSchedule,plan_id).interval_days==14
+    assert db.get(TaskScheduleCalendarRule,plan_id) is None
+    assert plans.materialize_schedules(db,date(2026,11,20))['generated']==3
+    assert [o.due_date for o in db.query(ScheduledTaskOccurrence).order_by(ScheduledTaskOccurrence.due_date)]==[
+        '2026-10-23','2026-11-06','2026-11-20']
+
+
+@pytest.mark.parametrize('frequency,interval',[('months',13),('months',0),('weeks',53),('days',366),('unknown',1)])
+def test_invalid_calendar_frequency_never_saves_plan(db,actor,frequency,interval):
+    from app.models import TaskScheduleCalendarRule
+    with pytest.raises(TaskError):
+        plans.create_schedule(db,**schedule_args(db,actor,frequency=frequency,interval_days=interval))
+    assert db.query(TaskSchedule).count()==db.query(TaskScheduleCalendarRule).count()==0
