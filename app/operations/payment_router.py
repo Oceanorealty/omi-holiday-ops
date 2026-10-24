@@ -3,7 +3,8 @@ import os
 from datetime import datetime,timedelta
 from fastapi import APIRouter,Depends,HTTPException,Query,Request
 from app.db import get_db
-from app.models import PublicPayment
+from app.models import PublicPayment,PublicPaymentAccount
+from app.operations.payment_ledger import link_state
 from app.operations.router import require_admin,templates
 
 router=APIRouter()
@@ -28,5 +29,7 @@ def payments_page(request:Request,state:str='',page:int=Query(1,ge=1,le=1000000)
     checks.append(('Quote signing configured',len(_secret())>=32))
     smtp_ready=all(os.environ.get(name) for name in ('SMTP_HOST','SMTP_USER','SMTP_PASSWORD'))
     return templates.TemplateResponse(request=request,name='payments.html',context={'rows':rows,'state':state,'states':STATES,
+        'account_links':{r.id:db.get(PublicPaymentAccount,r.id) for r in rows},
+        'account_states':{r.id:link_state(db,db.get(PublicPaymentAccount,r.id)) for r in rows},
         'page':page,'pages':pages,'total':total,'checks':checks,'sandbox_ready':all(ok for _,ok in checks),
         'old_attempt':datetime.utcnow()-timedelta(hours=23),'smtp_ready':smtp_ready},headers={'Cache-Control':'no-store'})
