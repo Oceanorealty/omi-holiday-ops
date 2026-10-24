@@ -101,6 +101,8 @@ def get_listing(property_id: int, db: Session = Depends(get_db)):
     prop = _published_property_or_404(db, property_id)
     data = _property_summary(prop)
     data["description"] = prop.description
+    from app.operations.property_photos import public_gallery
+    data["photos"] = public_gallery(db,prop.id)
     # A sub-unit that isn't itself published stays hidden even when its
     # parent is public — "not published" must mean invisible everywhere.
     data["units"] = [_property_summary(u) for u in sorted(prop.units, key=lambda u: u.id) if u.published]

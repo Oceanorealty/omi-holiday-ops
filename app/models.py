@@ -55,9 +55,9 @@ class MessageStatus(str, enum.Enum):
 
 class StaffRole(str, enum.Enum):
     admin = "admin"  # full access, including managing other staff accounts
-    manager = "manager"  # same access as staff; distinguishes seniority in the UI
-    staff = "staff"  # everything except the Staff management page
-    cleaner = "cleaner"  # same access as staff; distinguishes housekeeping logins in the UI
+    manager = "manager"  # assigned-work workspace; seniority label
+    staff = "staff"  # assigned-work workspace only
+    cleaner = "cleaner"  # assigned-work workspace; housekeeping label
 
 
 class StaffUser(Base):
@@ -1001,3 +1001,29 @@ class PublicPayment(Base):
     refund_id = Column(String, nullable=True)
     failure_code = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class PublicPaymentAccount(Base):
+    """Immutable origin of the sandbox booking account entries, not a live bank transfer."""
+    __tablename__ = 'public_payment_accounts'
+    payment_id = Column(String(36), ForeignKey('public_payments.id'), primary_key=True)
+    booking_id = Column(Integer, ForeignKey('bookings.id'), nullable=False, unique=True)
+    charge_entry_id = Column(Integer, ForeignKey('booking_ledger_entries.id'), nullable=False, unique=True)
+    payment_entry_id = Column(Integer, ForeignKey('booking_ledger_entries.id'), nullable=False, unique=True)
+    snapshot = Column(Text, nullable=False)
+    snapshot_hash = Column(String(64), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class PropertyPhoto(Base):
+    __tablename__ = 'property_photos'
+    id = Column(Integer, primary_key=True)
+    property_id = Column(Integer, ForeignKey('properties.id'), nullable=False, index=True)
+    url = Column(String(2000), nullable=False)
+    caption = Column(String(500), nullable=False, default='')
+    alt_text = Column(String(200), nullable=False)
+    position = Column(Integer, nullable=False)
+    active = Column(Boolean, nullable=False, default=True)
+    version = Column(Integer, nullable=False, default=1)
+    actor = Column(String(160), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
