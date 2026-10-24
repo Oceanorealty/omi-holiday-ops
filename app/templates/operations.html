@@ -2,8 +2,14 @@
 {% block title %}Operations overview — Omi Holiday{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Operations overview</h1><p class="muted">Resolve gaps before they affect a guest or an owner.</p></div>
+<nav class="quick-actions" aria-label="Common actions">
+<a class="quick-action" href="/operations/calendar"><strong>Open calendar</strong><span>Check dates and availability</span></a>
+<a class="quick-action" href="/operations/reservations"><strong>Reservations</strong><span>Find or create a booking</span></a>
+<a class="quick-action" href="/operations/tasks"><strong>Manage tasks</strong><span>Assign work and review progress</span></a>
+<a class="quick-action" href="/operations/guest-checkins"><strong>Prepare arrivals</strong><span>Review guest readiness</span></a>
+</nav>
 <section class="card"><h2>Needs review</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>Review</th><th>Count</th><th>Next step</th></tr></thead><tbody>
+<div class="table-wrap"><table data-mobile-list class="table"><thead><tr><th>Review</th><th>Count</th><th>Next step</th></tr></thead><tbody>
 <tr><td>Overdue maintenance and operations tasks</td><td>{{ overdue_work_orders }}</td><td><a href="/operations/tasks">Assign and review work</a></td></tr>
 <tr><td>Bookings missing from their calendar source</td><td>{{ missing_sources }}</td><td><a href="/">Check the source before cancelling</a></td></tr>
 <tr><td>Bookings without an amount</td><td>{{ missing_amounts }}</td><td><a href="/transactions">Complete finance records</a></td></tr>
@@ -13,7 +19,7 @@
 <section class="card"><h2>Booking sources</h2><p>Your website is the primary direct-booking storefront. Booking.com, Airbnb and other booking platforms connect to OPS as separate sources. <a href="/operations/channels">Review booking sources and connection readiness</a> or <a href="/operations/setup">set up calendar feeds</a>.</p>
 <details><summary>Historical integration observations</summary><p>Historical observations stay separate from bookings, messages and accounts.</p>
 <p>{{ shadow_count }} observations · {{ unmapped }} need a property match.</p>
-{% if runs %}<div class="table-wrap"><table class="table"><thead><tr><th>Run</th><th>Result</th><th>Records</th></tr></thead><tbody>{% for run in runs %}<tr><td>{{ run.id }}</td><td>{{ run.state }}</td><td>{{ run.record_count }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}</details>
+{% if runs %}<div class="table-wrap"><table data-mobile-list class="table"><thead><tr><th>Run</th><th>Result</th><th>Records</th></tr></thead><tbody>{% for run in runs %}<tr><td>{{ run.id }}</td><td>{{ run.state }}</td><td>{{ run.record_count }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}</details>
 </section>
 <section class="card"><h2>Automation status</h2><p>Scheduled processing: {{ 'enabled' if scheduler_enabled else 'paused' }}. Guest message delivery: {{ 'enabled for opted-in bookings' if dispatch_enabled else 'held for review' }}.</p><p class="muted">Owner statements require complete amounts, commission settings and final review. Imported bookings start with guest messages paused.</p></section>
 <section class="card"><h2>Resolve a review</h2>
@@ -39,7 +45,7 @@
 {% else %}<p>No reviews are currently eligible for a decision.</p>{% endfor %}
 </section>
 <section class="card"><h2>Recent decisions</h2>
-{% if review_history %}<div class="table-wrap"><table class="table"><thead><tr><th>Record</th><th>Decision</th><th>Reviewed by</th><th>Evidence note</th></tr></thead><tbody>
+{% if review_history %}<div class="table-wrap"><table data-mobile-list class="table"><thead><tr><th>Record</th><th>Decision</th><th>Reviewed by</th><th>Evidence note</th></tr></thead><tbody>
 {% for review in review_history %}<tr><td>{{ review.entity_kind }} #{{ review.entity_id }}</td><td>{{ review.action.replace('_',' ') }}</td><td>{{ review.actor }}</td><td>{{ review.note }}</td></tr>{% endfor %}
 </tbody></table></div>{% else %}<p>No recorded decisions yet.</p>{% endif %}</section>
 {% endblock %}

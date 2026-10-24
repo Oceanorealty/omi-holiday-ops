@@ -1,4 +1,5 @@
 """Immutable checklist templates, repeatable schedules and once-only task expenses."""
+import calendar
 import hashlib
 import json
 from datetime import date, datetime, timedelta
@@ -6,7 +7,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from app.models import (ChecklistTemplate, Expense, OpsCommand, Property, ScheduledTaskOccurrence,
-    StaffUser, TaskSchedule, TaskTemplateApplication, WorkOrder, WorkOrderCheck, WorkOrderCost, WorkOrderEvent)
+    StaffUser, TaskSchedule, TaskScheduleCalendarRule, TaskTemplateApplication, WorkOrder, WorkOrderCheck, WorkOrderCost, WorkOrderEvent)
 from app.operations.tasks import CATEGORIES, PRIORITIES, TaskError, checklist_snapshot, verify_token
 from app.operations.reservations import money
 
@@ -93,14 +94,20 @@ def apply_template(db, *, actor, entity_id, token, template_id, note):
 
 
 def create_schedule(db, *, actor, token, property_id, title, description, category, priority,
-                    interval_days, start_date, end_date='', assignee_id=None, template_id=None, note):
+                    interval_days, start_date, end_date='', assignee_id=None, template_id=None, note, frequency='days'):
     verify_token(token, actor, 0, purpose='schedule-create')
     start = iso_date(start_date)
     end = iso_date(end_date) if end_date else None
     title, description = title.strip(), description.strip()
     if not 1 <= len(title) <= 160 or len(description) > 4000 or category not in CATEGORIES or priority not in PRIORITIES:
         raise TaskError('Choose a valid title, category and priority; details are limited to 4000 characters')
-    if not 1 <= interval_days <= 365 or start < today() - timedelta(days=31) or (end and end < start):
+    limits={'days':365,'weeks':52,'months':12}
+    if frequency not in limits or not 1 <= interval_days <= limits[frequency]:
+        raise TaskError('Choose 1–365 days, 1–52 weeks or 1–12 calendar months')
+    repeat_every=interval_days
+    interval_days=interval_days*7 if frequency=='weeks' else interval_days
+    if frequency=='months':interval_days=31*repeat_every
+    if start < today() - timedelta(days=31) or (end and end < start):
         raise TaskError('Use a 1–365 day interval, a start no earlier than 31 days ago, and an end on or after the start')
     if not db.get(Property, property_id):
         raise TaskError('Property not found')
@@ -115,8 +122,11 @@ def create_schedule(db, *, actor, token, property_id, title, description, catego
             priority=priority, interval_days=interval_days, next_due=start.isoformat(), end_date=end.isoformat() if end else None,
             assignee_id=assignee_id, template_id=template_id, checklist_snapshot=template.items if template else '[]', created_by=actor)
         db.add(row); db.flush()
+        if frequency=='months':
+            db.add(TaskScheduleCalendarRule(schedule_id=row.id,anchor_date=start.isoformat(),interval_months=repeat_every))
         record_command(db, token, 'schedule-create', actor, note, {'schedule_id': row.id, 'start': start.isoformat(),
-            'end': row.end_date, 'interval_days': interval_days, 'template_id': template_id})
+            'end': row.end_date, 'interval_days': interval_days, 'template_id': template_id,
+            'frequency':frequency,'repeat_every':repeat_every})
         db.commit()
         return row.id
     except IntegrityError:
@@ -140,6 +150,15 @@ def set_schedule_active(db, *, actor, entity_id, token, active, note):
         db.rollback(); raise
 
 
+def next_calendar_due(anchor, current, every):
+    """Preserve the original day even after a short month or a leap year."""
+    elapsed=(current.year-anchor.year)*12+current.month-anchor.month
+    month_index=anchor.year*12+anchor.month-1+(elapsed//every+1)*every
+    year,month0=divmod(month_index,12)
+    month=month0+1
+    return date(year,month,min(anchor.day,calendar.monthrange(year,month)[1]))
+
+
 def materialize_schedules(db, through=None):
     through = through or today() + timedelta(days=14)
     if not today() <= through <= today() + timedelta(days=30):
@@ -157,6 +176,8 @@ def materialize_schedules(db, through=None):
             if locked.rowcount != 1 or not row or not row.active:
                 db.rollback(); continue
             due = iso_date(row.next_due)
+            rule=db.get(TaskScheduleCalendarRule,entity_id)
+            anchor=iso_date(rule.anchor_date) if rule else None
             end = iso_date(row.end_date) if row.end_date else None
             added, processed = 0, 0
             staff = db.get(StaffUser, row.assignee_id) if row.assignee_id else None
@@ -184,7 +205,7 @@ def materialize_schedules(db, through=None):
                         snapshot=json.dumps({'schedule_id': entity_id, 'due_date': due.isoformat(), 'title': row.title,
                             'assignee_id': assignee, 'checklist': checklist_snapshot(checks)}, sort_keys=True)))
                     added += 1
-                due += timedelta(days=row.interval_days)
+                due = next_calendar_due(anchor,due,rule.interval_months) if rule else due+timedelta(days=row.interval_days)
             if processed:
                 row.next_due = due.isoformat()
                 row.version += 1

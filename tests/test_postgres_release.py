@@ -416,3 +416,28 @@ def test_postgres_custom_field_import_atomic_concurrency_and_literal_search(pg):
         if rows[0].value=='Literal 100%_A':
             assert len(search_page(s,scope='property',needle='100%_A')['rows'])==2
             assert search_page(s,scope='property',needle='100%_a')['rows']==[]
+
+
+def test_postgres_monthly_schedule_upgrade_and_concurrent_generation(pg,monkeypatch):
+    from datetime import date
+    from app.models import TaskSchedule,TaskScheduleCalendarRule,ScheduledTaskOccurrence
+    from app.operations import task_plans as plans
+    engine,_,_=pg
+    base_schema(engine)
+    for _ in range(2):migrate.run(engine);Base.metadata.create_all(engine)
+    monkeypatch.setattr(plans,'today',lambda:date(2028,1,31))
+    with Session(engine) as s:
+        p=s.query(Property).one()
+        plan_id=plans.create_schedule(s,actor='reviewer',token=form_token('reviewer',purpose='schedule-create'),
+            property_id=p.id,title='Synthetic monthly inspection',description='',category='inspection',
+            priority='normal',frequency='months',interval_days=1,start_date='2028-01-31',
+            note='Create a calendar anchored inspection plan')
+    def generate():
+        with Session(engine) as s:return plans.materialize_schedules(s,date(2028,2,29))['generated']
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sum(pool.map(lambda _:generate(),range(2)))==2
+    with Session(engine) as s:
+        assert s.query(Booking).one().uid=='synthetic-existing'
+        assert s.query(ScheduledTaskOccurrence).count()==2
+        assert s.get(TaskSchedule,plan_id).next_due=='2028-03-31'
+        assert s.get(TaskScheduleCalendarRule,plan_id).anchor_date=='2028-01-31'

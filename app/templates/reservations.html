@@ -11,7 +11,7 @@
 <label>First night <input name="start" type="date" value="{{ start }}"></label><label>End date (excluded) <input name="end" type="date" value="{{ end }}"></label>
 <button class="btn">Filter</button><a href="/operations/reservations">Reset filters</a></form>
 <p class="muted">Search matches guest details or the source reference, plus an exact numeric reservation ID. Date filters show stays overlapping the selected nights, excluding the checkout night.</p>
-<div class="table-wrap"><table class="table small"><thead><tr><th>ID</th><th>Property</th><th>Channel</th><th>Dates</th><th>Guest</th><th>Amount</th><th>Status</th></tr></thead><tbody>
+<div class="table-wrap"><table data-mobile-list class="table small"><thead><tr><th>ID</th><th>Property</th><th>Channel</th><th>Dates</th><th>Guest</th><th>Amount</th><th>Status</th></tr></thead><tbody>
 {% for b in rows %}<tr><td><a href="/operations/reservations/{{ b.id }}">#{{ b.id }}</a></td><td>{{ b.property.name }}</td><td>{{ b.platform.value }}</td><td>{{ b.check_in.date() }} → {{ b.check_out.date() }}</td><td>{{ b.guest.name or '—' if b.guest else '—' }}</td><td>{{ b.amount if b.amount is not none else 'Unknown' }}</td><td>{{ b.status.value }}{% if b.has_conflict %} · Conflict{% endif %}{% if b.source_missing_since %} · Source needs review{% endif %}</td></tr>
 {% else %}<tr><td colspan="7">No reservations in this selection. <a href="/operations/setup">Check calendar connections</a>.</td></tr>{% endfor %}</tbody></table></div>
 <nav aria-label="Reservation pages"><span>Page {{ page }} · up to 200 reservations per page</span>{% if previous_url %} · <a href="{{ previous_url }}">Previous page</a>{% endif %}{% if next_url %} · <a href="{{ next_url }}">Next page</a>{% endif %}</nav>

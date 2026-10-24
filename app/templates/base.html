@@ -4,25 +4,22 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block title %}Omi Holiday — Operations{% endblock %}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=ops-navigation-20261024" />
-</head>
-<body>
+  <link rel="stylesheet" href="/static/style.css?v=ops-interface-20261025" />
+<script src="/static/ops-interface.js?v=20261025" defer></script></head>
+<body class="ops-shell">
+  <a class="skip-link" href="#main-content">Skip to content</a>
   <header class="topbar">
     <a class="brand" href="/operations">
       <img class="brand-mark" src="/static/omi-mark.png" alt="Omi" />
       <span class="brand-sub">Operations</span>
     </a>
-    <input type="checkbox" id="nav-toggle" class="nav-toggle" />
-    <label for="nav-toggle" class="nav-toggle-btn" aria-label="Menu"><span></span><span></span><span></span></label>
+    <button type="button" class="nav-toggle-btn" data-nav-toggle aria-controls="primary-navigation" aria-expanded="false" hidden>Menu</button>
     {% from '_navigation.html' import groups, selected %}
-    <nav class="primary-nav" aria-label="Main navigation">
+    <nav id="primary-navigation" class="primary-nav" aria-label="Main navigation">
       <a href="/operations" class="{{ selected(request.url.path, '/operations') if request.url.path == '/operations' else '' }}">Overview</a>
       {% for label, links in groups %}
       {% set state = namespace(active=false) %}{% for href, title, description in links %}{% if selected(request.url.path, href)|trim %}{% set state.active = true %}{% endif %}{% endfor %}
-      <details class="nav-group{% if state.active %} current-group{% endif %}">
+      <details class="nav-group{% if state.active %} current-group{% endif %}"{% if state.active %} open{% endif %}>
         <summary>{{ label }}</summary>
         <div class="nav-menu">{% for href, title, description in links %}<a href="{{ href }}" class="{{ selected(request.url.path, href) }}"{% if request.url.path == href %} aria-current="page"{% endif %}>{{ title }}</a>{% endfor %}</div>
       </details>
@@ -33,7 +30,7 @@
       <button class="logout-btn" type="submit">Sign out</button>
     </form>
   </header>
-  <main class="container">
+  <main id="main-content" class="container" tabindex="-1">
     {% if request.url.path != '/operations/tools' %}
     {% for label, links in groups %}{% set state = namespace(active=false) %}{% for href, title, description in links %}{% if selected(request.url.path, href)|trim %}{% set state.active = true %}{% endif %}{% endfor %}
     {% if state.active %}<nav class="section-nav" aria-label="{{ label }} tools">{% for href, title, description in links %}<a href="{{ href }}" class="{{ selected(request.url.path, href) }}"{% if request.url.path == href %} aria-current="page"{% endif %}>{{ title }}</a>{% endfor %}</nav>{% endif %}{% endfor %}
