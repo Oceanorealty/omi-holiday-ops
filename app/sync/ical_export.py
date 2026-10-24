@@ -44,7 +44,7 @@ def build_resource_ics(db,property_id,*,start=None):
     if not prop:raise ValueError('Property not found')
     start=start or datetime.now(ZoneInfo(prop.time_zone)).date()
     end=start+timedelta(days=730)
-    context=stock_context(db,property_id,datetime.combine(start,datetime.min.time()),datetime.combine(end,datetime.min.time()))
+    context=stock_context(db,property_id,datetime.combine(start,datetime.min.time()),datetime.combine(end,datetime.min.time()),include_checkout_holds=False)
     stopped={r.night for r in db.query(InventoryDay).filter(InventoryDay.property_id==property_id,
         InventoryDay.night>=start.isoformat(),InventoryDay.night<end.isoformat(),InventoryDay.stop_sell.is_(True)).all()}
     cal=Calendar.from_ical(build_ics([]))
