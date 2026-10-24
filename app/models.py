@@ -629,6 +629,14 @@ class TaskSchedule(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class TaskScheduleCalendarRule(Base):
+    """Immutable calendar-month rule; existing schedules retain their day intervals."""
+    __tablename__ = 'task_schedule_calendar_rules'
+    schedule_id = Column(Integer, ForeignKey('task_schedules.id'), primary_key=True)
+    anchor_date = Column(String(10), nullable=False)
+    interval_months = Column(Integer, nullable=False)
+
+
 class ScheduledTaskOccurrence(Base):
     __tablename__ = 'scheduled_task_occurrences'
     __table_args__ = (UniqueConstraint('schedule_id', 'due_date', name='uq_schedule_due'),)
