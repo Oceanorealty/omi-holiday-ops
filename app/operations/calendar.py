@@ -53,6 +53,7 @@ def calendar_data(db, start: date, end: date, property_id=None):
             blocks = [b for b in overnight if b.is_block]
             cells.append({'note_end':(day+timedelta(days=1)).isoformat(),'internal_note':notes.get((prop.id,day.isoformat()),''),'date': day.isoformat(), 'stop_sell': (prop.id, day.isoformat()) in stops,
                 'available_units':0 if (prop.id,day.isoformat()) in stops else units_from_context(stock,day_start,day_end),
+                'checkout_holds':sum(h.check_in<day_end and h.check_out>day_start for h in stock.get('holds',[])),
                 'booking_ids': [b.id for b in stays],
                 'block_ids': [b.id for b in blocks], 'conflict_ids': sorted(conflict_ids),
                 'source_review_ids': [b.id for b in in_day if b.source_missing_since],
@@ -73,7 +74,7 @@ def calendar_data(db, start: date, end: date, property_id=None):
             'reserved_night_pct': round(reserved / sellable * 100, 1) if sellable and not ambiguous else None,
             'evidence': [f'booking:{b.id}' for b in records]})
     return {'start': start.isoformat(), 'end': end.isoformat(), 'dates': [d.isoformat() for d in days], 'rows': rows,
-        'limitations': 'Local confirmed reservations only; end date excluded. Dates use stored property-local booking times. '
-        'Blocks and stop-sell restrictions reduce sellable nights. Conflicts, invalid dates or reservations on stopped nights suppress percentages. Missing-source reservations remain reserved until reviewed. '
+        'limitations': 'Local confirmed reservations and active checkout holds; end date excluded. Dates use stored property-local booking times. '
+        'Checkout holds reduce available units temporarily but are not reservations or occupancy. Blocks and stop-sell restrictions reduce sellable nights. Conflicts, invalid dates or reservations on stopped nights suppress percentages. Missing-source reservations remain reserved until reviewed. '
         'Shared inventory is applied only through explicit resource bindings; parent-child names alone do not link inventory. '
         'Reserved-night percentages are suppressed for resource-mapped listings. No cross-property totals or actual guest attendance inferred.'}
