@@ -8,9 +8,24 @@
     const pay = root.querySelector('[data-pay]');
     const check = root.querySelector('[data-check]');
     const status = root.querySelector('[role="status"]');
+    const resume = root.querySelector('[data-resume]');
+    const fresh = root.querySelector('[data-new]');
     const propertyId = Number(root.dataset.propertyId);
     let quote, attempt, checkout, stripe, elements, paymentElement, busy = false, terminal = false, submitted = false;
     const tell = value => { status.textContent = value; };
+    const storageKey = 'omi-sandbox-checkout-v1:' + propertyId;
+    let context = {id:root.dataset.checkoutId, token:root.dataset.resumeToken, propertyId, at:Date.now()};
+    const saveContext = () => {
+      if (!context.id || !context.token) throw new Error('Reload recovery is not configured; no payment was started.');
+      // Per-tab storage contains an opaque checkout identity only, never guest/card details or client secrets.
+      sessionStorage.setItem(storageKey, JSON.stringify(context));
+    };
+    const finish = result => {
+      if (!['confirmed','refunded'].includes(result.state)) return false;
+      terminal = true; pay.hidden = true; check.hidden = true; resume.hidden = true; fresh.hidden = false;
+      tell(result.state === 'confirmed' ? `Test booking confirmed. Reference: ${result.booking_ref}` : 'The stay was unavailable. The sandbox payment was refunded.');
+      return true;
+    };
     const request = async (path, options = {}) => {
       const response = await fetch(path, {credentials:'omit', cache:'no-store', ...options});
       let body;
@@ -49,12 +64,13 @@
         } else {
           if (!attempt) {
             const values = Object.fromEntries(new FormData(form));
-            attempt = {checkout_id:crypto.randomUUID(), property_id:propertyId, check_in:values.check_in, check_out:values.check_out,
+            attempt = {checkout_id:context.id, property_id:propertyId, check_in:values.check_in, check_out:values.check_out,
               guests:Number(values.guests), guest:{name:values.name, email:values.email, language:values.language}, quote_token:quote.quote_token};
             fields.disabled = true; // Freeze the exact payload and UUID across ambiguous network retries.
           }
+          saveContext();
           checkout = await request('/api/public/booking', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(attempt)});
-          mountPayment();
+          await acceptCheckout();
         }
       } catch (error) {
         if (checkout) { pay.hidden = false; check.hidden = false; }
@@ -63,11 +79,8 @@
     });
     const poll = async () => {
       for (let i=0; i<30; i++) {
-        const result = await request('/api/public/booking/' + encodeURIComponent(checkout.payment_intent_id), {headers:{Authorization:'Bearer '+checkout.access_token}});
-        if (result.state === 'confirmed' || result.state === 'refunded') {
-          terminal = true; pay.hidden = true; check.hidden = true;
-          tell(result.state === 'confirmed' ? `Test booking confirmed. Reference: ${result.booking_ref}` : 'The stay was unavailable. The sandbox payment was refunded.'); return;
-        }
+        const result = await request('/api/public/checkout/' + encodeURIComponent(context.id), {headers:{Authorization:'Bearer '+context.token}});
+        if (finish(result)) return;
         if (['refund_pending','refund_failed'].includes(result.state)) {
           pay.hidden = true; tell('No booking was created. Refund is not complete; the test operator must review it.'); return;
         }
@@ -75,6 +88,34 @@
       }
       tell('Confirmation is still pending. Use Check booking status or contact the test operator. Do not pay again.');
     };
+    const acceptCheckout = async () => {
+      if (finish(checkout)) return;
+      check.hidden = false; resume.hidden = true;
+      if (['refund_pending','refund_failed'].includes(checkout.state)) {
+        pay.hidden = true; tell('Refund is not complete; use Check booking status or ask the test operator.'); return;
+      }
+      if (['succeeded','processing'].includes(checkout.provider_state)) {
+        submitted = true; pay.hidden = true; tell('Existing payment submitted. Checking its original booking…'); await poll(); return;
+      }
+      if (checkout.provider_state === 'canceled') {
+        pay.hidden = true; tell('This payment was cancelled. Ask the test operator to review it before starting again.'); return;
+      }
+      mountPayment();
+    };
+    resume.addEventListener('click', async () => {
+      if (busy || terminal) return;
+      busy = true; resume.disabled = true;
+      try {
+        checkout = await request('/api/public/checkout/' + encodeURIComponent(context.id) + '/resume',
+          {method:'POST',headers:{Authorization:'Bearer '+context.token}});
+        await acceptCheckout();
+      } catch (error) { tell(error.message + ' Keep this checkout identity; do not start another payment.'); }
+      finally { busy = false; resume.disabled = false; }
+    });
+    fresh.addEventListener('click', () => {
+      if (!terminal) return;
+      sessionStorage.removeItem(storageKey); window.location.reload();
+    });
     pay.addEventListener('click', async () => {
       if (busy || !checkout || submitted || terminal) return;
       busy = true; pay.disabled = true; check.disabled = true;
@@ -93,5 +134,19 @@
       try { await poll(); } catch (error) { tell(error.message); }
       finally { busy = false; check.disabled = false; pay.disabled = submitted; }
     });
+    try {
+      const saved = sessionStorage.getItem(storageKey);
+      if (saved) {
+        const previous = JSON.parse(saved);
+        if (previous.propertyId !== propertyId || typeof previous.id !== 'string' || typeof previous.token !== 'string'
+            || !Number.isFinite(previous.at) || Date.now()-previous.at > 24*60*60*1000) {
+          throw new Error('Saved checkout needs an operator review; no new payment will be started.');
+        }
+        context = previous; fields.disabled = true; next.disabled = true; resume.hidden = false;
+        tell('A checkout is saved in this tab. Resume it to recover the original payment; no guest or card details were stored.');
+      }
+    } catch (error) {
+      fields.disabled = true; next.disabled = true; tell(error.message);
+    }
   });
 })();
