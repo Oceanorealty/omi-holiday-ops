@@ -8,6 +8,9 @@
     const pay = root.querySelector('[data-pay]');
     const check = root.querySelector('[data-check]');
     const status = root.querySelector('[role="status"]');
+    const holdMessage = root.querySelector('[data-hold-status]');
+    let holdDeadline = 0, holdTimer;
+    if (!holdMessage) { status.textContent = 'Checkout changed. Reload this page before starting a payment.'; next.disabled = true; return; }
     const resume = root.querySelector('[data-resume]');
     const fresh = root.querySelector('[data-new]');
     const propertyId = Number(root.dataset.propertyId);
@@ -20,8 +23,27 @@
       // Per-tab storage contains an opaque checkout identity only, never guest/card details or client secrets.
       sessionStorage.setItem(storageKey, JSON.stringify(context));
     };
+    const updateHold = result => {
+      clearInterval(holdTimer);
+      holdDeadline = result.hold_active && Number.isFinite(result.hold_seconds_remaining)
+        ? performance.now() + result.hold_seconds_remaining * 1000 : 0;
+      const render = () => {
+        const seconds = Math.max(0, Math.ceil((holdDeadline - performance.now()) / 1000));
+        if (seconds > 0) {
+          holdMessage.textContent = `Local inventory held: ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')} remaining. Refreshing does not extend the hold.`;
+        } else {
+          clearInterval(holdTimer); pay.disabled = true; pay.hidden = true;
+          holdMessage.textContent = 'No active inventory hold. This does not prove payment failed. Check the original payment status before starting another payment.';
+        }
+      };
+      render();
+      if (holdDeadline > performance.now()) holdTimer = setInterval(render, 1000);
+      return holdDeadline > performance.now();
+    };
     const finish = result => {
       if (!['confirmed','refunded'].includes(result.state)) return false;
+      clearInterval(holdTimer);
+      holdMessage.textContent = result.state === 'confirmed' ? 'Inventory is reserved by the confirmed test booking.' : 'The checkout hold has ended.';
       terminal = true; pay.hidden = true; check.hidden = true; resume.hidden = true; fresh.hidden = false;
       tell(result.state === 'confirmed' ? `Test booking confirmed. Reference: ${result.booking_ref}` : 'The stay was unavailable. The sandbox payment was refunded.');
       return true;
@@ -41,6 +63,7 @@
       if (attempt && !terminal) { event.preventDefault(); event.returnValue = ''; }
     });
     const mountPayment = () => {
+      if (!updateHold(checkout)) return false;
       stripe ||= window.Stripe(root.dataset.stripeKey);
       elements ||= stripe.elements({clientSecret:checkout.client_secret});
       if (!paymentElement) { const element = elements.create('payment'); element.mount(root.querySelector('[data-payment]')); paymentElement = element; }
@@ -81,6 +104,7 @@
       for (let i=0; i<30; i++) {
         const result = await request('/api/public/checkout/' + encodeURIComponent(context.id), {headers:{Authorization:'Bearer '+context.token}});
         if (finish(result)) return;
+        updateHold(result);
         if (['refund_pending','refund_failed'].includes(result.state)) {
           pay.hidden = true; tell('No booking was created. Refund is not complete; the test operator must review it.'); return;
         }
@@ -117,7 +141,7 @@
       sessionStorage.removeItem(storageKey); window.location.reload();
     });
     pay.addEventListener('click', async () => {
-      if (busy || !checkout || submitted || terminal) return;
+      if (busy || !checkout || submitted || terminal || holdDeadline <= performance.now()) return;
       busy = true; pay.disabled = true; check.disabled = true;
       try {
         if (!elements) mountPayment();

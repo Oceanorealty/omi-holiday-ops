@@ -18,7 +18,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
 from app.db import Base, get_db
-from app.models import Booking, Property, PublicPayment
+from app.models import Booking, Property, PublicPayment, PublicCheckoutHold
 from app.public_api import router as public_router
 from app.public_booking import router as booking_router
 
@@ -191,6 +191,8 @@ def test_bad_signature_rejected(env):
 def test_two_concurrent_paid_checkouts_only_one_booking(env):
     client, sessions, _, intents, refunds = env
     assert checkout(env).status_code == 200
+    with sessions() as db:
+        db.query(PublicCheckoutHold).one().expires_at=datetime.utcnow()-timedelta(seconds=1);db.commit()
     assert checkout(env, checkout_id=str(uuid4())).status_code == 200
     with ThreadPoolExecutor(max_workers=2) as pool:
         responses = list(pool.map(lambda pi: webhook(client, pi), list(intents.values())))
@@ -276,7 +278,11 @@ def test_shared_capacity_is_used_instead_of_single_booking_overlap(env):
         resource=StockResource(name='Synthetic two room pool',capacity=2,time_zone=p.time_zone)
         db.add(resource);db.flush()
         db.add(StockBinding(property_id=p.id,resource_id=resource.id,quantity=1));db.commit()
-    for _ in range(3):assert checkout(env,checkout_id=str(uuid4())).status_code==200
+    for i in range(3):
+        if i==2:
+            with sessions() as db:
+                db.query(PublicCheckoutHold).order_by(PublicCheckoutHold.created_at).first().expires_at=datetime.utcnow()-timedelta(seconds=1);db.commit()
+        assert checkout(env,checkout_id=str(uuid4())).status_code==200
     with ThreadPoolExecutor(max_workers=3) as pool:
         responses=list(pool.map(lambda pi:webhook(client,pi),list(intents.values())))
     assert all(r.status_code==200 for r in responses)

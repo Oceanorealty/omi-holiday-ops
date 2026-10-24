@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy import or_, update
 from sqlalchemy.exc import IntegrityError
-from app.models import Booking, BookingStatus, Property, StockBinding, StockGuard, StockResource
+from app.models import Booking, BookingStatus, Property, PublicPayment, StockBinding, StockGuard, StockResource
 from app.operations.task_plans import record_command
 from app.operations.tasks import TaskError, form_token, verify_token
 
@@ -31,7 +31,7 @@ def config_token(db,actor):
     return form_token(actor,SimpleNamespace(id=1,version=guard.revision if guard else 0),purpose='stock-config')
 
 
-def stock_context(db,property_id,start,end):
+def stock_context(db,property_id,start,end,*,include_checkout_holds=True):
     prop=db.get(Property,property_id)
     if not prop:raise TaskError('Property not found')
     requested=db.query(StockBinding).filter_by(property_id=property_id).all()
@@ -53,11 +53,17 @@ def stock_context(db,property_id,start,end):
     records=db.query(Booking).filter(Booking.property_id.in_(property_ids),Booking.status==BookingStatus.confirmed,
         Booking.check_in<end,or_(Booking.check_out>start,Booking.check_out<=Booking.check_in)).limit(5001).all()
     if len(records)>5000:raise TaskError('Inventory needs a narrower review before booking')
-    return {'groups':groups,'records':records,'shared':bool(requested),
+    holds=[]
+    if include_checkout_holds:
+        from app.operations.checkout_holds import active_hold_query
+        holds=active_hold_query(db).filter(PublicPayment.property_id.in_(property_ids),
+            PublicPayment.check_in<end,PublicPayment.check_out>start).limit(5001).all()
+        if len(holds)>5000:raise TaskError('Checkout inventory needs a narrower review')
+    return {'groups':groups,'records':records,'holds':holds,'shared':bool(requested),
         'capacity':min(g['capacity']//g['quantity'] for g in groups)}
 
 
-def units_from_context(context,start,end,exclude_id=0):
+def units_from_context(context,start,end,exclude_id=0,*,exclude_checkout_id=None):
     if end<=start:return 0
     remaining=[]
     for group in context['groups']:
@@ -70,6 +76,12 @@ def units_from_context(context,start,end,exclude_id=0):
             quantity=group['capacity'] if booking.is_block else group['amounts'][booking.property_id]
             changes[max(start,booking_start)]+=quantity
             changes[min(end,booking_end)]-=quantity
+        for hold in context.get('holds',[]):
+            if hold.id==exclude_checkout_id or hold.property_id not in group['amounts']:continue
+            if hold.check_in>=end or hold.check_out<=start:continue
+            quantity=group['amounts'][hold.property_id]
+            changes[max(start,hold.check_in)]+=quantity
+            changes[min(end,hold.check_out)]-=quantity
         used=peak=0
         for point,change in sorted(changes.items()):
             used+=change
@@ -86,8 +98,8 @@ def inventory_interval(booking):
     return booking.check_in,booking.check_out
 
 
-def available_units(db,property_id,start,end,exclude_id=0):
-    return units_from_context(stock_context(db,property_id,start,end),start,end,exclude_id)
+def available_units(db,property_id,start,end,exclude_id=0,*,exclude_checkout_id=None):
+    return units_from_context(stock_context(db,property_id,start,end),start,end,exclude_id,exclude_checkout_id=exclude_checkout_id)
 
 
 def conflict_ids(db):
@@ -146,6 +158,9 @@ def configure_stock(db,*,actor,token,action,name='',capacity=1,time_zone='UTC',p
         lock_stock(db);db.expire_all()
         guard=db.get(StockGuard,1)
         if guard.revision!=expected:raise TaskError('Inventory configuration changed; reload before saving')
+        from app.operations.checkout_holds import active_hold_query
+        if action in ('bind','unbind','timezone') and active_hold_query(db).first():
+            raise TaskError('Wait for active checkout holds to finish or expire before changing stock bindings or timezones')
         if action=='create':
             try:ZoneInfo(time_zone)
             except (ZoneInfoNotFoundError,ValueError):raise TaskError('Use a valid IANA timezone') from None

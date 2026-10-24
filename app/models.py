@@ -1011,6 +1011,14 @@ class PublicPayment(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class PublicCheckoutHold(Base):
+    """Fixed, non-renewing sandbox checkout inventory lease; expiry is not a payment outcome."""
+    __tablename__ = 'public_checkout_holds'
+    payment_id = Column(String(36), ForeignKey('public_payments.id'), primary_key=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 class PublicPaymentAccount(Base):
     """Immutable origin of the sandbox booking account entries, not a live bank transfer."""
     __tablename__ = 'public_payment_accounts'
