@@ -75,9 +75,9 @@ def _published_property_or_404(db: Session, property_id: int) -> Property:
     return prop
 
 
-def _has_overlapping_booking(db: Session, property_id: int, start_dt: datetime, end_dt: datetime) -> bool:
+def _has_overlapping_booking(db: Session, property_id: int, start_dt: datetime, end_dt: datetime, *, exclude_checkout_id=None) -> bool:
     from app.operations.stock import available_units
-    try:return available_units(db,property_id,start_dt,end_dt)<1
+    try:return available_units(db,property_id,start_dt,end_dt,exclude_checkout_id=exclude_checkout_id)<1
     except ValueError:return True
 
 

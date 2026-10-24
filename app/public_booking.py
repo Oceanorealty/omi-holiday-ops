@@ -25,12 +25,13 @@ from starlette.concurrency import run_in_threadpool
 
 from app.auth import _secret, _sign
 from app.db import get_db
-from app.models import Booking, BookingStatus, Guest, PlatformName, Property, PublicPayment
+from app.models import Booking, BookingStatus, Guest, PlatformName, Property, PublicPayment, PublicCheckoutHold
 from app.public_api import _has_overlapping_booking, _money
 from app.pricing import price_breakdown
 from app.operations.inventory import restriction_reason
 from app.operations.stock import lock_stock, refresh_conflicts
 from app.operations.tasks import TaskError
+from app.operations.checkout_holds import HOLD_MINUTES, hold_status
 
 router = APIRouter(prefix="/api/public", tags=["public-booking"])
 
@@ -121,7 +122,7 @@ def _fingerprint(body):
     return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
 
 
-def _checkout_result(payment, intent):
+def _checkout_result(db, payment, intent):
     if intent.get("livemode") is not False:
         raise HTTPException(503, "expected_test_payment")
     return {"status": "success", "result": {
@@ -130,7 +131,7 @@ def _checkout_result(payment, intent):
         "client_secret": intent["client_secret"],
         "access_token": _access_token(payment.id),
         "amount": _money(payment.amount), "currency": payment.currency,
-        "state": payment.state, "provider_state": intent.get("status"),
+        "state": payment.state, "provider_state": intent.get("status"), **hold_status(db,payment),
     }}
 
 
@@ -144,6 +145,9 @@ def _ensure_intent(db, payment, key):
         # create a second intent after an ambiguous old network failure.
         if payment.created_at < datetime.utcnow() - timedelta(hours=23):
             raise HTTPException(409, "checkout_requires_reconciliation")
+        hold=db.get(PublicCheckoutHold,payment.id)
+        if not hold or hold.expires_at<=datetime.utcnow():
+            raise HTTPException(409,'checkout_hold_expired_requires_review')
         intent = stripe.PaymentIntent.create(
             amount=int(payment.amount * 100), currency=payment.currency.lower(),
             payment_method_types=["card"], metadata={"omi_checkout_id": payment.id},
@@ -161,7 +165,7 @@ def _ensure_intent(db, payment, key):
     if payment.state == "creating":
         payment.state = "awaiting_payment"
     db.commit()
-    return _checkout_result(payment, intent)
+    return _checkout_result(db,payment, intent)
 
 
 @router.post("/booking")
@@ -210,7 +214,8 @@ def create_checkout(body: CheckoutInput, response: Response, db: Session = Depen
                 guest_phone=body.guest.phone, language=body.guest.language,
                 amount=total, currency="AUD", state="creating",
             )
-            db.add(payment)
+            db.add(payment);db.flush()
+            db.add(PublicCheckoutHold(payment_id=checkout_id,expires_at=datetime.utcnow()+timedelta(minutes=HOLD_MINUTES)))
         db.commit()
         return _ensure_intent(db, payment, key)
     except stripe.StripeError:
@@ -306,7 +311,7 @@ def _apply_event(event, db, key):
         prop = db.get(Property, payment.property_id)
         restriction = restriction_reason(db, payment.property_id, payment.check_in.date(), payment.check_out.date()) if prop else None
         if (not prop or not prop.published or restriction or (prop.max_guests is not None and payment.guests>prop.max_guests) or _has_overlapping_booking(
-                db, payment.property_id, payment.check_in, payment.check_out)):
+                db, payment.property_id, payment.check_in, payment.check_out, exclude_checkout_id=payment.id)):
             payment.failure_code = "listing_or_dates_unavailable"
             return _refund(db, payment, key)
         guest = Guest(name=payment.guest_name, email=payment.guest_email,
@@ -346,7 +351,7 @@ def checkout_status(payment_intent_id: str, response: Response,
     # Never disclose guest info, access codes or a guest-portal magic link here.
     return {"status": "success", "result": {
         "state": payment.state, "booking_ref": payment.booking_id,
-        "amount": _money(payment.amount), "currency": payment.currency,
+        "amount": _money(payment.amount), "currency": payment.currency, **hold_status(db,payment),
     }}
 
 
@@ -371,7 +376,7 @@ def recover_status(checkout_id: UUID, response: Response, authorization: str = H
     payment = _authorized_checkout(db, str(checkout_id), authorization)
     response.headers['Cache-Control'] = 'no-store'
     return {'status':'success','result':{'checkout_id':payment.id, 'state':payment.state,
-        'booking_ref':payment.booking_id, 'amount':_money(payment.amount), 'currency':payment.currency}}
+        'booking_ref':payment.booking_id, 'amount':_money(payment.amount), 'currency':payment.currency, **hold_status(db,payment)}}
 
 
 def _authorized_checkout(db, checkout_id, authorization):
@@ -391,7 +396,7 @@ def resume_checkout(checkout_id: UUID, response: Response, authorization: str = 
         if payment.state not in ('creating','awaiting_payment'):
             db.commit()
             return {'status':'success','result':{'checkout_id':payment.id,'state':payment.state,
-                'booking_ref':payment.booking_id,'amount':_money(payment.amount),'currency':payment.currency}}
+                'booking_ref':payment.booking_id,'amount':_money(payment.amount),'currency':payment.currency, **hold_status(db,payment)}}
         db.commit()
         return _ensure_intent(db,payment,key)
     except stripe.StripeError:
