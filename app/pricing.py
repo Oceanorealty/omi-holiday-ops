@@ -54,15 +54,20 @@ def suggested_price(db: Session, prop: Property, target: date, today: date | Non
             PriceRule.active.is_(True),
             (PriceRule.property_id == prop.id) | (PriceRule.property_id.is_(None)),
         )
-        .all()
+        .order_by(PriceRule.id).all()
     )
 
+    return calculate_price(prop, target, today, override, rules, db.get(PricingLimit,prop.id))
+
+
+def calculate_price(prop, target, today, override, rules, limits):
+    """Shared arithmetic for individual quotes and prefetched calendar context."""
+    if prop.base_nightly_rate is None and not (override and override.nightly_rate is not None):return None
     price = override.nightly_rate if override and override.nightly_rate is not None else prop.base_nightly_rate
     if not (override and override.nightly_rate is not None) and prop.pricing_mode == 'dynamic':
         for rule in rules:
             if _rule_matches(rule, target, today):
                 price = (price * rule.multiplier).quantize(Decimal("0.01"))
-    limits = db.get(PricingLimit,prop.id)
     if limits:
         if limits.minimum_rate is not None:price=max(price,limits.minimum_rate)
         if limits.maximum_rate is not None:price=min(price,limits.maximum_rate)
