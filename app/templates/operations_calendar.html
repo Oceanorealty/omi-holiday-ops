@@ -17,9 +17,9 @@
 .calendar-controls a:focus-visible{outline:2px solid #7f5c1c;outline-offset:2px}
 </style>
 <section class="card">
-<form method="get" action="/operations/calendar">
-<label for="start">First night</label><input id="start" name="start" type="date" required value="{{ start }}">
-<label for="end">End date (excluded)</label><input id="end" name="end" type="date" required value="{{ end }}">
+<form class="form-row calendar-date-form" method="get" action="/operations/calendar">
+<label for="start">First night<input id="start" name="start" type="date" required value="{{ start }}"></label>
+<label for="end">End date (excluded)<input id="end" name="end" type="date" required value="{{ end }}"></label>
 {% if selected_property_id %}<input type="hidden" name="property_id" value="{{ selected_property_id }}">{% endif %}
 <input type="hidden" name="view" value="{{ view }}">
 <label><input type="checkbox" name="include_context" value="1" {% if context_enabled %}checked{% endif %}> Show rates, account balances, tasks and calendar-feed status</label>

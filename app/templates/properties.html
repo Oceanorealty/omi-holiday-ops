@@ -93,7 +93,7 @@
   </form>
 
   <div class="table-wrap">
-  <table class="table small">
+  <table data-mobile-list class="table small">
     <thead>
       <tr><th>Platform</th><th>Feed URL</th><th>Last synced</th><th>Status</th><th></th></tr>
     </thead>
@@ -139,7 +139,7 @@
   {% set blocks = p.bookings | selectattr('is_block', 'equalto', true) | selectattr('status.value', 'equalto', 'confirmed') | sort(attribute='check_in') | list %}
   {% if blocks %}
   <div class="table-wrap">
-  <table class="table small">
+  <table data-mobile-list class="table small">
     <thead><tr><th>From</th><th>To</th><th>Note</th><th></th></tr></thead>
     <tbody>
       {% for block in blocks %}
