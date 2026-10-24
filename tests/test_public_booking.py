@@ -421,3 +421,43 @@ def test_resume_recovers_ambiguous_create_without_new_snapshot(env,monkeypatch):
     response=client.post('/api/public/checkout/'+body['checkout_id']+'/resume',headers=auth)
     assert response.status_code==200 and len(intents)==1
     with sessions() as db:assert db.query(PublicPayment).count()==1 and db.query(Booking).count()==0
+
+
+def test_payment_review_triage_filters_stale_and_unlinked_without_mutation(env):
+    from app.operations.payment_router import router as review_router
+    from app.operations.router import require_admin
+    client,sessions,body,_,_=env
+    now=datetime.utcnow()
+    with sessions() as db:
+        for name,state,hours in [('recent','awaiting_payment',1),('stale','awaiting_payment',24),
+                ('creating','creating',24),('refund','refund_failed',1),('done','refunded',24),
+                ('unlinked','confirmed',1)]:
+            db.add(PublicPayment(id=name,fingerprint='synthetic',property_id=body['property_id'],
+                check_in=now,check_out=now+timedelta(days=1),guests=1,
+                guest_name='Private synthetic guest',guest_email='private@example.test',
+                amount=100,currency='AUD',state=state,created_at=now-timedelta(hours=hours)))
+        db.commit()
+    app=FastAPI();app.include_router(review_router)
+    def database():
+        with sessions() as db:yield db
+    app.dependency_overrides[get_db]=database
+    app.dependency_overrides[require_admin]=lambda:'synthetic-admin'
+    with TestClient(app) as review:
+        response=review.get('/operations/payments?review=true')
+        assert response.status_code==200
+        assert '4 attempts need review' in response.text
+        for name in ['stale','creating','refund','unlinked']:
+            assert '<td>'+name+'<br>' in response.text
+        for name in ['recent','done']:
+            assert '<td>'+name+'<br>' not in response.text
+        assert 'Do not charge again' in response.text
+        assert 'private@example.test' not in response.text
+        assert 'Private synthetic guest' not in response.text
+        filtered=review.get('/operations/payments?review=true&state=confirmed')
+        assert '<td>unlinked<br>' in filtered.text and '<td>refund<br>' not in filtered.text
+        assert '1 attempts · Page 1 of 1' in filtered.text
+        assert review.get('/operations/payments?review=invalid').status_code==422
+    with sessions() as db:
+        assert db.query(PublicPayment).count()==6
+        assert db.get(PublicPayment,'stale').state=='awaiting_payment'
+        assert db.get(PublicPayment,'refund').state=='refund_failed'
