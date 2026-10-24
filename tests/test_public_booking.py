@@ -69,7 +69,7 @@ def env(tmp_path, monkeypatch, request):
     def create(**kwargs):
         checkout_id = kwargs["metadata"]["omi_checkout_id"]
         pi = {"id": "pi_" + checkout_id, "client_secret": "fake_client_secret",
-              "livemode": False, "amount_received": kwargs["amount"],
+              "livemode": False, "amount": kwargs["amount"], "amount_received": kwargs["amount"],
               "currency": kwargs["currency"], "status": "succeeded", "metadata": kwargs["metadata"]}
         intents[pi["id"]] = pi
         return pi
@@ -358,3 +358,66 @@ def test_sandbox_checkout_page_requires_isolation_and_test_publishable_key(env,m
     assert response.headers['x-robots-tag']=='noindex, nofollow'
     monkeypatch.setenv('OPS_PAYMENT_ENVIRONMENT','production')
     assert client.get(url).status_code==503
+
+
+def test_verified_payment_creates_one_atomic_sandbox_account(env):
+    from app.models import BookingAccount,BookingLedgerEntry,PublicPaymentAccount
+    from app.operations.billing import totals
+    client,sessions,body,intents,_=env
+    assert checkout(env).status_code==200
+    pi=next(iter(intents.values()))
+    assert webhook(client,pi).status_code==200 and webhook(client,pi).status_code==200
+    with sessions() as db:
+        payment=db.get(PublicPayment,body['checkout_id']);link=db.get(PublicPaymentAccount,payment.id)
+        assert link and link.booking_id==payment.booking_id
+        account=db.get(BookingAccount,link.booking_id)
+        rows=db.query(BookingLedgerEntry).filter_by(booking_id=link.booking_id).all()
+        assert len(rows)==2 and totals(rows)['balance']==0 and account.currency=='AUD'
+        received=next(r for r in rows if r.kind=='payment')
+        assert json.loads(received.receipt_snapshot)['environment']=='sandbox'
+        assert 'no real money' in received.evidence_note.lower()
+
+
+def test_ledger_failure_rolls_back_booking_and_entries(env,monkeypatch):
+    from app.models import BookingAccount,BookingLedgerEntry,PublicPaymentAccount
+    import app.operations.payment_ledger as ledger
+    client,sessions,_,intents,_=env
+    checkout(env);pi=next(iter(intents.values()));original=ledger.link_new_payment
+    def fail(db,payment,booking):
+        original(db,payment,booking)
+        raise RuntimeError('Synthetic failure after account insertion')
+    with monkeypatch.context() as m:
+        m.setattr(ledger,'link_new_payment',fail)
+        with pytest.raises(RuntimeError):webhook(client,pi)
+    with sessions() as db:
+        for model in [Booking,BookingAccount,BookingLedgerEntry,PublicPaymentAccount]:assert db.query(model).count()==0
+    assert webhook(client,pi).status_code==200
+
+
+def test_authorized_resume_reuses_existing_intent_and_hides_guest_details(env):
+    client,sessions,body,intents,_=env
+    result=checkout(env).json()['result'];auth={'Authorization':'Bearer '+result['access_token']}
+    url='/api/public/checkout/'+body['checkout_id']
+    assert client.get(url).status_code==404 and client.post(url+'/resume').status_code==404
+    result2=client.post(url+'/resume',headers=auth)
+    assert result2.status_code==200 and result2.json()['result']['payment_intent_id']==result['payment_intent_id']
+    assert len(intents)==1
+    for response in [client.get(url,headers=auth),result2]:
+        assert 'test@example.com' not in response.text and 'Test Guest' not in response.text
+        assert response.headers['cache-control']=='no-store'
+    assert webhook(client,next(iter(intents.values()))).status_code==200
+    terminal=client.post(url+'/resume',headers=auth).json()['result']
+    assert terminal['state']=='confirmed' and 'client_secret' not in terminal
+
+
+def test_resume_recovers_ambiguous_create_without_new_snapshot(env,monkeypatch):
+    from app.public_booking import _access_token
+    client,sessions,body,intents,_=env
+    create=stripe.PaymentIntent.create
+    with monkeypatch.context() as m:
+        m.setattr(stripe.PaymentIntent,'create',lambda **kw:(_ for _ in ()).throw(stripe.APIConnectionError('Synthetic loss')))
+        assert checkout(env).status_code==503
+    auth={'Authorization':'Bearer '+_access_token(body['checkout_id'])}
+    response=client.post('/api/public/checkout/'+body['checkout_id']+'/resume',headers=auth)
+    assert response.status_code==200 and len(intents)==1
+    with sessions() as db:assert db.query(PublicPayment).count()==1 and db.query(Booking).count()==0

@@ -341,6 +341,9 @@ with SessionLocal() as db:
  p=Property(name="Synthetic",commission_pct=20);db.add(p);db.flush()
  db.add(Booking(property_id=p.id,platform=PlatformName.direct,uid="synthetic",check_in=datetime(2026,10,1),check_out=datetime(2026,10,3),amount=None));db.commit()
 with TestClient(app) as c:
+ r=c.post('/login',data={'username':'test-admin','password':'fake','next':'//example.invalid'},follow_redirects=False)
+ assert r.status_code==303 and r.headers['location']=='/'
+ assert 'HttpOnly' in r.headers['set-cookie'] and 'Secure;' not in r.headers['set-cookie']
  c.cookies.set(SESSION_COOKIE,make_session_cookie("test-admin"))
  for path in ["/healthz","/","/transactions","/cleaning","/operations","/api/ops/overview","/operations/setup","/operations/reservations","/operations/inventory","/operations/reports","/operations/channels","/operations/task-plans","/operations/guest-checkins","/operations/reservation-requests","/operations/resources","/operations/inbox","/operations/agreements","/operations/accounts"]:
   r=c.get(path);assert r.status_code==200,(path,r.status_code,r.text[:300])
@@ -348,6 +351,9 @@ with TestClient(app) as c:
  assert "Unknown (1 missing)" in c.get("/transactions").text
  assert c.post("/properties/1/statements/generate",data={"period":"2026-10"}).status_code==200
  assert c.post("/statements/1/finalize",follow_redirects=False).status_code==409
+with TestClient(app,base_url='https://testserver') as c:
+ r=c.post('/login',data={'username':'test-admin','password':'fake'},follow_redirects=False)
+ assert r.status_code==303 and 'Secure' in r.headers['set-cookie']
 '''
     env={"PATH":os.environ.get("PATH",""),"DATABASE_URL":"sqlite:///"+str(tmp_path/'app.db'),
          "OPS_SCHEDULER_ENABLED":"0","OPS_MESSAGE_DISPATCH_ENABLED":"0","OPS_OWNER_EMAIL_ENABLED":"0",
