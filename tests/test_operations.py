@@ -345,7 +345,7 @@ with TestClient(app) as c:
  assert r.status_code==303 and r.headers['location']=='/'
  assert 'HttpOnly' in r.headers['set-cookie'] and 'Secure;' not in r.headers['set-cookie']
  c.cookies.set(SESSION_COOKIE,make_session_cookie("test-admin"))
- for path in ["/healthz","/","/transactions","/cleaning","/operations","/api/ops/overview","/operations/setup","/operations/reservations","/operations/inventory","/operations/reports","/operations/channels","/operations/task-plans","/operations/guest-checkins","/operations/reservation-requests","/operations/resources","/operations/inbox","/operations/agreements","/operations/accounts"]:
+ for path in ["/healthz","/","/transactions","/cleaning","/operations","/api/ops/overview","/operations/setup","/operations/reservations","/operations/inventory","/operations/reports","/operations/channels","/operations/task-plans","/operations/guest-checkins","/operations/reservation-requests","/operations/resources","/operations/inbox","/operations/agreements","/operations/accounts","/operations/guests"]:
   r=c.get(path);assert r.status_code==200,(path,r.status_code,r.text[:300])
  assert c.get('/healthz').json()['release']=='ops-gapfill-20261023'
  assert "Unknown (1 missing)" in c.get("/transactions").text

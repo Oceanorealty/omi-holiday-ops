@@ -102,6 +102,8 @@ from app.public_booking import router as public_booking_router
 app.include_router(public_booking_router)
 from app.operations.payment_router import router as payment_router
 app.include_router(payment_router)
+from app.operations.guest_directory_router import router as guest_directory_router
+app.include_router(guest_directory_router)
 from app.operations.property_photo_router import router as property_photo_router
 app.include_router(property_photo_router)
 from app.operations.my_work_router import router as my_work_router
