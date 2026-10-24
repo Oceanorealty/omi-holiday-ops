@@ -6,29 +6,27 @@
   <h1>Properties</h1>
 </div>
 
-<section class="card">
-  <h2>Add a property</h2>
+<section class="card"><h2>Find a property</h2><form method="get" class="form-row"><label>Search name, address or ID <input name="q" value="{{ q }}" maxlength="120"></label><label>Listing type <select name="kind">{% for value,label in [('all','All listings'),('standalone','Standalone / parent'),('units','Child units')] %}<option value="{{ value }}" {{ 'selected' if kind==value }}>{{ label }}</option>{% endfor %}</select></label><label>Website publication <select name="publication">{% for value,label in [('all','All states'),('published','Published'),('unpublished','Unpublished')] %}<option value="{{ value }}" {{ 'selected' if publication==value }}>{{ label }}</option>{% endfor %}</select></label><button class="btn">Filter</button><a href="/properties">Reset</a></form><p>{{ property_total }} listings · Page {{ property_page }} of {{ property_pages }}. Open a property to edit its settings.</p></section>
+<details class="card"><summary>Add a property</summary>
   <form method="post" action="/properties" class="form-row">
     <input type="text" name="name" placeholder="Property name" required />
     <input type="text" name="address" placeholder="Address (optional)" />
     <input type="text" name="default_cleaner" placeholder="Default cleaner (optional)" />
     <select name="parent_property_id">
       <option value="">Standalone property</option>
-      {% for parent in properties %}
+      {% for parent in all_properties if not parent.parent_property_id %}
       <option value="{{ parent.id }}">Unit under: {{ parent.name }}</option>
       {% endfor %}
     </select>
     <button class="btn primary" type="submit">Add property</button>
   </form>
   <p class="muted" style="margin-top:8px">Use "Unit under" for the hotel model — e.g. "Superior Studio" as a separately-bookable unit inside "OMI Collection Broadbeach".</p>
-</section>
+</details>
 
 {% for p in properties %}
-<p><a href="/operations/custom-fields/property/{{ p.id }}">{{ p.name }} · Custom fields</a></p>
-<section class="card">
-  <h2>{{ p.name }}
-    {% if p.published %}<span class="tag tag-ok">live on website</span>{% else %}<span class="tag tag-warn">not published</span>{% endif %}
-  </h2>
+<details class="card" id="property-{{ p.id }}"{% if selected_property_id==p.id %} open{% endif %}>
+<summary><strong>{{ p.name }}</strong> · #{{ p.id }}{% if p.parent_property_id %} · Unit{% endif %} · {{ 'Published' if p.published else 'Unpublished' }}</summary>
+<p><a href="/operations/properties/{{ p.id }}/photos">Photo gallery</a> · <a href="/operations/custom-fields/property/{{ p.id }}">Custom fields</a> · <a href="/operations/calendar?property_id={{ p.id }}">Calendar</a> · <a href="/operations/booking-windows?property_id={{ p.id }}">Booking window</a></p>
   {% if p.address %}<p class="muted">{{ p.address }}</p>{% endif %}
 
   {% set units = all_properties | selectattr('parent_property_id', 'equalto', p.id) | list %}
@@ -167,7 +165,8 @@
     <input type="text" name="note" placeholder="Note (e.g. owner use, maintenance)" style="flex:1" />
     <button class="btn" type="submit">Block dates</button>
   </form>
-</section>
-{% endfor %}
+</details>
+{% else %}<section class="card"><p>No listings match these filters. <a href="/properties">Show all listings</a>.</p></section>{% endfor %}
 
+<nav class="section-nav" aria-label="Property pages">{% if property_previous_url %}<a href="{{ property_previous_url }}">Previous</a>{% endif %}<span>Page {{ property_page }} of {{ property_pages }}</span>{% if property_next_url %}<a href="{{ property_next_url }}">Next</a>{% endif %}</nav>
 {% endblock %}
