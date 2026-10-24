@@ -135,37 +135,84 @@ def _checkout_result(db, payment, intent):
     }}
 
 
-def _ensure_intent(db, payment, key):
-    checkout_id = payment.id
-    # Retrying a network failure uses identical persisted Stripe parameters.
+def _cancellation_review(payment):
+    return payment.failure_code=='cancellation_unconfirmed' and payment.state in ('creating','awaiting_payment')
+
+
+def _status_result(db,payment,**extra):
+    return {'status':'success','result':{'checkout_id':payment.id,'state':payment.state,
+        'booking_ref':payment.booking_id,'amount':_money(payment.amount),'currency':payment.currency,
+        **hold_status(db,payment),'cancellation_pending_review':_cancellation_review(payment),**extra}}
+
+
+def _provider_intent(db,payment,key,*,recover_for_cancel=False):
     if payment.payment_intent_id:
-        intent = stripe.PaymentIntent.retrieve(payment.payment_intent_id, api_key=key)
+        intent=stripe.PaymentIntent.retrieve(payment.payment_intent_id,api_key=key)
     else:
-        # Stripe can prune idempotency keys after 24h. Never accidentally
-        # create a second intent after an ambiguous old network failure.
-        if payment.created_at < datetime.utcnow() - timedelta(hours=23):
-            raise HTTPException(409, "checkout_requires_reconciliation")
+        # After 24h Stripe may prune the original idempotency key. Never create
+        # a replacement for an old ambiguous attempt, even when cancelling.
+        if payment.created_at<datetime.utcnow()-timedelta(hours=23):
+            raise HTTPException(409,'checkout_requires_reconciliation')
         hold=db.get(PublicCheckoutHold,payment.id)
-        if not hold or hold.expires_at<=datetime.utcnow():
+        if not recover_for_cancel and (not hold or hold.expires_at<=datetime.utcnow()):
             raise HTTPException(409,'checkout_hold_expired_requires_review')
-        intent = stripe.PaymentIntent.create(
-            amount=int(payment.amount * 100), currency=payment.currency.lower(),
-            payment_method_types=["card"], metadata={"omi_checkout_id": payment.id},
-            idempotency_key="omi-checkout-v1-" + payment.id, api_key=key,
-        )
-    if (intent.get("livemode") is not False or intent.get('amount') != int(payment.amount*100)
-            or intent.get('currency') != payment.currency.lower() or intent.get('metadata',{}).get('omi_checkout_id') != payment.id):
-        raise HTTPException(503, "payment_snapshot_mismatch")
-    db.rollback()  # release the read transaction before reacquiring locks
+        intent=stripe.PaymentIntent.create(amount=int(payment.amount*100),currency=payment.currency.lower(),
+            payment_method_types=['card'],metadata={'omi_checkout_id':payment.id},
+            idempotency_key='omi-checkout-v1-'+payment.id,api_key=key)
+    if (not isinstance(intent.get('id'),str) or not intent['id'].startswith('pi_')
+            or intent.get('livemode') is not False or intent.get('amount')!=int(payment.amount*100)
+            or intent.get('currency')!=payment.currency.lower()
+            or intent.get('metadata',{}).get('omi_checkout_id')!=payment.id
+            or (payment.payment_intent_id and payment.payment_intent_id!=intent.get('id'))):
+        raise HTTPException(503,'payment_snapshot_mismatch')
+    return intent
+
+
+def _record_cancelled(db,payment,intent,source):
+    if (not isinstance(intent.get('id'),str) or not intent['id'].startswith('pi_')
+            or intent.get('livemode') is not False or intent.get('status')!='canceled'
+            or intent.get('amount_received')!=0 or intent.get('amount_capturable')!=0
+            or intent.get('amount')!=int(payment.amount*100) or intent.get('currency')!=payment.currency.lower()
+            or intent.get('metadata',{}).get('omi_checkout_id')!=payment.id
+            or (payment.payment_intent_id and payment.payment_intent_id!=intent.get('id'))):
+        raise HTTPException(409,'payment_cancellation_not_verified')
+    if payment.state=='cancelled':return
+    # A delayed replay of the original cancellation must not regress a later
+    # compensating refund for a contradictory success event.
+    if payment.state in ('refund_pending','refund_failed','refunded') and payment.failure_code=='success_after_checkout_cancelled':return
+    if payment.state not in ('creating','awaiting_payment') or payment.booking_id is not None:
+        raise HTTPException(409,'payment_cancellation_state_conflict')
+    payment.payment_intent_id=intent['id']
+    payment.state='cancelled';payment.failure_code='checkout_cancelled_before_payment'
+    from app.operations.task_plans import record_command
+    record_command(db,'sandbox-cancel-v1:'+payment.id,'sandbox-checkout-cancel','sandbox-checkout',
+        'Verified Stripe sandbox cancellation with no received or capturable funds.',
+        {'checkout_id':payment.id,'intent_id':intent['id'],'provider_state':'canceled',
+         'amount_received':0,'amount_capturable':0,'source':source})
+
+
+def _ensure_intent(db,payment,key):
+    checkout_id=payment.id
+    intent=_provider_intent(db,payment,key)
+    db.rollback()
     _lock(db)
-    payment = db.get(PublicPayment, checkout_id, populate_existing=True)
-    if payment.payment_intent_id and payment.payment_intent_id != intent["id"]:
-        raise HTTPException(409, "payment_intent_mismatch")
-    payment.payment_intent_id = intent["id"]
-    if payment.state == "creating":
-        payment.state = "awaiting_payment"
+    payment=db.get(PublicPayment,checkout_id,populate_existing=True)
+    if payment.payment_intent_id and payment.payment_intent_id!=intent['id']:
+        raise HTTPException(409,'payment_intent_mismatch')
+    # A parallel cancellation/callback wins over an older provider response.
+    if payment.state in ('confirmed','cancelled','refunded','refund_pending','refund_failed'):
+        db.commit();return _status_result(db,payment)
+    payment.payment_intent_id=intent['id']
+    if intent.get('status')=='canceled':
+        _record_cancelled(db,payment,intent,'checkout-recovery')
+        db.commit();return _status_result(db,payment)
+    if payment.state=='creating':payment.state='awaiting_payment'
+    if _cancellation_review(payment):
+        db.commit();return _status_result(db,payment,provider_state=intent.get('status'),
+            cancellation_available=intent.get('status') in ('requires_payment_method','requires_confirmation','requires_action')
+                and intent.get('amount_received')==0 and intent.get('amount_capturable')==0)
     db.commit()
-    return _checkout_result(db,payment, intent)
+    return _checkout_result(db,payment,intent)
 
 
 @router.post("/booking")
@@ -284,7 +331,7 @@ async def receive_webhook(request: Request, db: Session = Depends(get_db)):
 def _apply_event(event, db, key):
     if not isinstance(event.get("type"), str):
         raise HTTPException(400, "invalid_payment_event")
-    if event["type"] != "payment_intent.succeeded":
+    if event["type"] not in ("payment_intent.succeeded","payment_intent.canceled"):
         return {"received": True}
     pi = event.get("data", {}).get("object")
     if not isinstance(pi, dict) or not isinstance(pi.get('id'), str) or not isinstance(pi.get('metadata', {}), dict):
@@ -297,6 +344,9 @@ def _apply_event(event, db, key):
         payment = db.get(PublicPayment, checkout_id)
         if payment is None:
             raise HTTPException(409, "checkout_not_found")
+        if event['type']=='payment_intent.canceled':
+            _record_cancelled(db,payment,pi,'signed-webhook')
+            db.commit();return {'received':True,'state':payment.state}
         if (pi.get("livemode") is not False or pi.get("status") != "succeeded"
                 or pi.get("amount_received") != int(payment.amount * 100)
                 or pi.get("currency") != payment.currency.lower()
@@ -306,6 +356,9 @@ def _apply_event(event, db, key):
         if payment.state in ("confirmed", "refunded"):
             db.commit()
             return {"received": True, "state": payment.state}
+        if payment.state=='cancelled':
+            payment.failure_code='success_after_checkout_cancelled'
+            return _refund(db,payment,key)
         if payment.state in ("refund_pending", "refund_failed"):
             return _refund(db, payment, key)
         prop = db.get(Property, payment.property_id)
@@ -352,6 +405,7 @@ def checkout_status(payment_intent_id: str, response: Response,
     return {"status": "success", "result": {
         "state": payment.state, "booking_ref": payment.booking_id,
         "amount": _money(payment.amount), "currency": payment.currency, **hold_status(db,payment),
+        "cancellation_pending_review":_cancellation_review(payment),
     }}
 
 
@@ -376,7 +430,7 @@ def recover_status(checkout_id: UUID, response: Response, authorization: str = H
     payment = _authorized_checkout(db, str(checkout_id), authorization)
     response.headers['Cache-Control'] = 'no-store'
     return {'status':'success','result':{'checkout_id':payment.id, 'state':payment.state,
-        'booking_ref':payment.booking_id, 'amount':_money(payment.amount), 'currency':payment.currency, **hold_status(db,payment)}}
+        'booking_ref':payment.booking_id, 'amount':_money(payment.amount), 'currency':payment.currency, **hold_status(db,payment),'cancellation_pending_review':_cancellation_review(payment)}}
 
 
 def _authorized_checkout(db, checkout_id, authorization):
@@ -396,10 +450,47 @@ def resume_checkout(checkout_id: UUID, response: Response, authorization: str = 
         if payment.state not in ('creating','awaiting_payment'):
             db.commit()
             return {'status':'success','result':{'checkout_id':payment.id,'state':payment.state,
-                'booking_ref':payment.booking_id,'amount':_money(payment.amount),'currency':payment.currency, **hold_status(db,payment)}}
+                'booking_ref':payment.booking_id,'amount':_money(payment.amount),'currency':payment.currency, **hold_status(db,payment),'cancellation_pending_review':_cancellation_review(payment)}}
         db.commit()
         return _ensure_intent(db,payment,key)
     except stripe.StripeError:
         db.rollback();raise HTTPException(503,'payment_provider_unavailable') from None
+    except Exception:
+        db.rollback();raise
+
+
+@router.post('/checkout/{checkout_id}/cancel')
+def cancel_checkout(checkout_id:UUID,response:Response,authorization:str=Header(default=''),db:Session=Depends(get_db)):
+    key=_configured();response.headers['Cache-Control']='no-store'
+    identity=str(checkout_id)
+    try:
+        _lock(db)
+        payment=_authorized_checkout(db,identity,authorization)
+        if payment.state not in ('creating','awaiting_payment'):
+            db.commit();return _status_result(db,payment)
+        db.commit()  # Never hold the stock write lock during a provider call.
+        intent=_provider_intent(db,payment,key,recover_for_cancel=True)
+        if intent.get('status')!='canceled':
+            if (intent.get('status') not in ('requires_payment_method','requires_confirmation','requires_action')
+                    or intent.get('amount_received')!=0 or intent.get('amount_capturable')!=0):
+                db.rollback();_lock(db)
+                payment=_authorized_checkout(db,identity,authorization)
+                db.commit();return _status_result(db,payment,provider_state=intent.get('status'),cancellation_available=False)
+            intent=stripe.PaymentIntent.cancel(intent['id'],cancellation_reason='requested_by_customer',
+                idempotency_key='omi-checkout-cancel-v1-'+identity,api_key=key)
+        db.rollback();_lock(db)
+        payment=_authorized_checkout(db,identity,authorization)
+        if payment.state not in ('creating','awaiting_payment','cancelled'):
+            db.commit();return _status_result(db,payment)
+        _record_cancelled(db,payment,intent,'authenticated-checkout')
+        db.commit();return _status_result(db,payment)
+    except stripe.StripeError:
+        db.rollback();_lock(db)
+        payment=_authorized_checkout(db,identity,authorization)
+        if payment.state not in ('creating','awaiting_payment'):
+            db.commit();return _status_result(db,payment)
+        payment.failure_code='cancellation_unconfirmed'
+        db.commit()
+        raise HTTPException(503,'cancellation_unconfirmed_check_original_payment') from None
     except Exception:
         db.rollback();raise
