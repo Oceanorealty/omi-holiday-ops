@@ -13,7 +13,7 @@ import os
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import stripe
@@ -130,8 +130,38 @@ def _checkout_result(payment, intent):
         "client_secret": intent["client_secret"],
         "access_token": _access_token(payment.id),
         "amount": _money(payment.amount), "currency": payment.currency,
-        "state": payment.state,
+        "state": payment.state, "provider_state": intent.get("status"),
     }}
+
+
+def _ensure_intent(db, payment, key):
+    checkout_id = payment.id
+    # Retrying a network failure uses identical persisted Stripe parameters.
+    if payment.payment_intent_id:
+        intent = stripe.PaymentIntent.retrieve(payment.payment_intent_id, api_key=key)
+    else:
+        # Stripe can prune idempotency keys after 24h. Never accidentally
+        # create a second intent after an ambiguous old network failure.
+        if payment.created_at < datetime.utcnow() - timedelta(hours=23):
+            raise HTTPException(409, "checkout_requires_reconciliation")
+        intent = stripe.PaymentIntent.create(
+            amount=int(payment.amount * 100), currency=payment.currency.lower(),
+            payment_method_types=["card"], metadata={"omi_checkout_id": payment.id},
+            idempotency_key="omi-checkout-v1-" + payment.id, api_key=key,
+        )
+    if (intent.get("livemode") is not False or intent.get('amount') != int(payment.amount*100)
+            or intent.get('currency') != payment.currency.lower() or intent.get('metadata',{}).get('omi_checkout_id') != payment.id):
+        raise HTTPException(503, "payment_snapshot_mismatch")
+    db.rollback()  # release the read transaction before reacquiring locks
+    _lock(db)
+    payment = db.get(PublicPayment, checkout_id, populate_existing=True)
+    if payment.payment_intent_id and payment.payment_intent_id != intent["id"]:
+        raise HTTPException(409, "payment_intent_mismatch")
+    payment.payment_intent_id = intent["id"]
+    if payment.state == "creating":
+        payment.state = "awaiting_payment"
+    db.commit()
+    return _checkout_result(payment, intent)
 
 
 @router.post("/booking")
@@ -182,31 +212,7 @@ def create_checkout(body: CheckoutInput, response: Response, db: Session = Depen
             )
             db.add(payment)
         db.commit()
-        # Retrying a network failure uses identical persisted Stripe parameters.
-        if payment.payment_intent_id:
-            intent = stripe.PaymentIntent.retrieve(payment.payment_intent_id, api_key=key)
-        else:
-            # Stripe can prune idempotency keys after 24h. Never accidentally
-            # create a second intent after an ambiguous old network failure.
-            if payment.created_at < datetime.utcnow() - timedelta(hours=23):
-                raise HTTPException(409, "checkout_requires_reconciliation")
-            intent = stripe.PaymentIntent.create(
-                amount=int(payment.amount * 100), currency=payment.currency.lower(),
-                payment_method_types=["card"], metadata={"omi_checkout_id": payment.id},
-                idempotency_key="omi-checkout-v1-" + payment.id, api_key=key,
-            )
-        if intent.get("livemode") is not False:
-            raise HTTPException(503, "expected_test_payment")
-        db.rollback()  # release the read transaction before reacquiring locks
-        _lock(db)
-        payment = db.get(PublicPayment, checkout_id, populate_existing=True)
-        if payment.payment_intent_id and payment.payment_intent_id != intent["id"]:
-            raise HTTPException(409, "payment_intent_mismatch")
-        payment.payment_intent_id = intent["id"]
-        if payment.state == "creating":
-            payment.state = "awaiting_payment"
-        db.commit()
-        return _checkout_result(payment, intent)
+        return _ensure_intent(db, payment, key)
     except stripe.StripeError:
         db.rollback()
         raise HTTPException(503, "payment_provider_unavailable") from None
@@ -317,6 +323,8 @@ def _apply_event(event, db, key):
         db.flush()
         payment.booking_id = booking.id
         payment.state = "confirmed"
+        from app.operations.payment_ledger import link_new_payment
+        link_new_payment(db,payment,booking)
         refresh_conflicts(db)
         # Existing scheduler handles cleaning/messages after commit; no mail or
         # unrelated bookings are processed inside the Stripe callback.
@@ -353,5 +361,40 @@ def sandbox_checkout_page(request: Request, property_id: int, db: Session = Depe
         raise HTTPException(404, 'listing_not_found')
     from app.operations.router import templates
     return templates.TemplateResponse(request=request, name='sandbox_checkout.html',
-        context={'property':prop, 'publishable_key':publishable_key},
+        context={'property':prop, 'publishable_key':publishable_key, 'checkout_id':(checkout_id:=str(uuid4())), 'resume_token':_access_token(checkout_id)},
         headers={'Cache-Control':'no-store', 'Referrer-Policy':'no-referrer', 'X-Robots-Tag':'noindex, nofollow'})
+
+
+@router.get('/checkout/{checkout_id}')
+def recover_status(checkout_id: UUID, response: Response, authorization: str = Header(default=''), db: Session = Depends(get_db)):
+    _configured()
+    payment = _authorized_checkout(db, str(checkout_id), authorization)
+    response.headers['Cache-Control'] = 'no-store'
+    return {'status':'success','result':{'checkout_id':payment.id, 'state':payment.state,
+        'booking_ref':payment.booking_id, 'amount':_money(payment.amount), 'currency':payment.currency}}
+
+
+def _authorized_checkout(db, checkout_id, authorization):
+    payment = db.get(PublicPayment, checkout_id)
+    if not payment or not hmac.compare_digest(authorization, 'Bearer '+_access_token(checkout_id)):
+        raise HTTPException(404,'checkout_not_found')
+    return payment
+
+
+@router.post('/checkout/{checkout_id}/resume')
+def resume_checkout(checkout_id: UUID, response: Response, authorization: str = Header(default=''), db: Session = Depends(get_db)):
+    key = _configured()
+    response.headers['Cache-Control'] = 'no-store'
+    try:
+        _lock(db)
+        payment = _authorized_checkout(db, str(checkout_id), authorization)
+        if payment.state not in ('creating','awaiting_payment'):
+            db.commit()
+            return {'status':'success','result':{'checkout_id':payment.id,'state':payment.state,
+                'booking_ref':payment.booking_id,'amount':_money(payment.amount),'currency':payment.currency}}
+        db.commit()
+        return _ensure_intent(db,payment,key)
+    except stripe.StripeError:
+        db.rollback();raise HTTPException(503,'payment_provider_unavailable') from None
+    except Exception:
+        db.rollback();raise

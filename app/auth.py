@@ -11,9 +11,9 @@ embedded webviews) doesn't support the native Basic Auth credential prompt,
 so a link shared in WeChat would just fail to load. A normal HTML login
 form + signed cookie works everywhere a browser does.
 
-If ADMIN_USER/ADMIN_PASSWORD aren't set, auth is skipped entirely (so local
-dev needs no credentials) — but that means production MUST have them
-configured, since there's nothing else gating access.
+If neither SECRET_KEY nor ADMIN_PASSWORD is set, auth is skipped for local
+development. With a signing secret, named administrators can sign in without
+a shared account. Other named roles are restricted to their assigned work.
 """
 
 from __future__ import annotations
@@ -25,12 +25,13 @@ import time
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import RedirectResponse
+from starlette.responses import RedirectResponse, JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 SESSION_COOKIE = "omi_session"
 SESSION_MAX_AGE = 60 * 60 * 24 * 30  # 30 days
 PUBLIC_PATHS = {"/login", "/healthz"}
-# /api/public/ is read-only listing data meant to be fetched directly from
+# /api/public/ exposes public listing data and explicitly gated checkout meant to be fetched from
 # the omiholiday.com marketing site — it must stay reachable without a
 # session cookie, since the browser making that request is a site visitor's.
 # /owner/, /cleaner/ and /guest/ are magic-link portals for people who
@@ -81,12 +82,25 @@ def verify_session_cookie(cookie_value: str) -> str | None:
     return username or os.environ.get("ADMIN_USER", "admin")
 
 
+def named_principal(username, session_factory=None):
+    from app.models import StaffUser,StaffRole
+    if session_factory is None:
+        from app.db import SessionLocal
+        session_factory=SessionLocal
+    with session_factory() as db:
+        row=db.query(StaffUser).filter_by(username=username,active=True).first()
+        return {'username':row.username,'admin':row.role==StaffRole.admin} if row else None
+
+
 class SessionAuthMiddleware(BaseHTTPMiddleware):
+    def __init__(self,app,session_factory=None):
+        super().__init__(app);self.session_factory=session_factory
+
     async def dispatch(self, request: Request, call_next):
         admin_user = os.environ.get("ADMIN_USER")
         admin_password = os.environ.get("ADMIN_PASSWORD")
 
-        if not admin_user or not admin_password:
+        if not _secret():
             return await call_next(request)  # not configured — no gate (local dev)
 
         path = request.url.path
@@ -97,7 +111,16 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
         username = verify_session_cookie(cookie)
         if username:
             request.state.username = username
-            return await call_next(request)
+            if path=='/logout':return await call_next(request)
+            if username==admin_user and admin_password:
+                return await call_next(request)
+            try:principal=await run_in_threadpool(named_principal,username,self.session_factory)
+            except Exception:return JSONResponse({'detail':'Access temporarily unavailable'},status_code=503)
+            if not principal:return JSONResponse({'detail':'Active staff login required'},status_code=403)
+            if principal['admin'] or path=='/my-work' or path.startswith('/my-work/'):
+                return await call_next(request)
+            if path=='/' and request.method=='GET':return RedirectResponse('/my-work',status_code=303)
+            return JSONResponse({'detail':'Administrator access required; use My work for assigned tasks'},status_code=403)
 
         next_url = path if request.method == "GET" else "/"
         return RedirectResponse(url=f"/login?next={next_url}", status_code=303)

@@ -102,6 +102,12 @@ from app.public_booking import router as public_booking_router
 app.include_router(public_booking_router)
 from app.operations.payment_router import router as payment_router
 app.include_router(payment_router)
+from app.operations.property_photo_router import router as property_photo_router
+app.include_router(property_photo_router)
+from app.operations.my_work_router import router as my_work_router
+app.include_router(my_work_router)
+from app.operations.staff_router import router as staff_router
+app.include_router(staff_router)
 app.include_router(public_router)
 app.add_middleware(SessionAuthMiddleware)
 
@@ -177,11 +183,12 @@ def login_page(request: Request, next: str = "/", error: str = ""):
 
 
 @app.post("/login")
-def login_submit(username: str = Form(...), password: str = Form(...), next: str = Form("/")):
+def login_submit(request: Request, username: str = Form(...), password: str = Form(...), next: str = Form("/")):
     admin_user = os.environ.get("ADMIN_USER", "")
     admin_password = os.environ.get("ADMIN_PASSWORD", "")
 
     logged_in_as = None
+    named_role = None
     if secrets_module.compare_digest(username, admin_user) and secrets_module.compare_digest(
         password, admin_password
     ):
@@ -196,16 +203,20 @@ def login_submit(username: str = Form(...), password: str = Form(...), next: str
             )
             if staff and verify_password(password, staff.password_hash):
                 logged_in_as = staff.username
+                named_role = staff.role
         finally:
             db.close()
 
     if logged_in_as:
-        response = RedirectResponse(url=next or "/", status_code=303)
+        target=next if next.startswith('/') and not next.startswith('//') and chr(92) not in next and not any(ord(c)<32 for c in next) else '/'
+        if named_role is not None and named_role!=StaffRole.admin and not (target=='/my-work' or target.startswith('/my-work/')):target='/my-work'
+        response = RedirectResponse(url=target, status_code=303)
         response.set_cookie(
             SESSION_COOKIE,
             make_session_cookie(logged_in_as),
             max_age=SESSION_MAX_AGE,
             httponly=True,
+            secure=request.url.scheme=="https",
             samesite="lax",
         )
         return response
@@ -511,86 +522,6 @@ def delete_price_rule(rule_id: int):
     return RedirectResponse(url="/pricing", status_code=303)
 
 
-def _is_admin(request: Request, db) -> bool:
-    username = getattr(request.state, "username", None)
-    if not username:
-        return True  # auth gate disabled (local dev) — nothing to restrict
-    if username == os.environ.get("ADMIN_USER"):
-        return True
-    staff = db.query(StaffUser).filter(StaffUser.username == username).first()
-    return bool(staff and staff.role == StaffRole.admin)
-
-
-@app.get("/staff")
-def staff_page(request: Request):
-    db = SessionLocal()
-    try:
-        if not _is_admin(request, db):
-            return templates.TemplateResponse("staff.html", {"request": request, "denied": True, "staff": []})
-        staff = db.query(StaffUser).order_by(StaffUser.name).all()
-        return templates.TemplateResponse(
-            "staff.html", {"request": request, "denied": False, "staff": staff, "roles": list(StaffRole)}
-        )
-    finally:
-        db.close()
-
-
-@app.post("/staff")
-def create_staff(
-    request: Request,
-    name: str = Form(...),
-    username: str = Form(...),
-    password: str = Form(...),
-    role: str = Form("staff"),
-):
-    db = SessionLocal()
-    try:
-        if not _is_admin(request, db):
-            return RedirectResponse(url="/staff", status_code=303)
-        db.add(
-            StaffUser(
-                name=name,
-                username=username,
-                password_hash=hash_password(password),
-                role=StaffRole(role),
-            )
-        )
-        db.commit()
-    finally:
-        db.close()
-    return RedirectResponse(url="/staff", status_code=303)
-
-
-@app.post("/staff/{staff_id}/toggle")
-def toggle_staff(request: Request, staff_id: int):
-    db = SessionLocal()
-    try:
-        if not _is_admin(request, db):
-            return RedirectResponse(url="/staff", status_code=303)
-        staff = db.get(StaffUser, staff_id)
-        if staff:
-            staff.active = not staff.active
-            db.commit()
-    finally:
-        db.close()
-    return RedirectResponse(url="/staff", status_code=303)
-
-
-@app.post("/staff/{staff_id}/delete")
-def delete_staff(request: Request, staff_id: int):
-    db = SessionLocal()
-    try:
-        if not _is_admin(request, db):
-            return RedirectResponse(url="/staff", status_code=303)
-        staff = db.get(StaffUser, staff_id)
-        if staff and staff.username != getattr(request.state, "username", None):
-            db.delete(staff)
-            db.commit()
-    finally:
-        db.close()
-    return RedirectResponse(url="/staff", status_code=303)
-
-
 @app.get("/api/public/properties")
 def public_properties():
     db = SessionLocal()
@@ -619,15 +550,14 @@ def public_properties():
 
 
 @app.get("/properties")
-def properties_page(request: Request):
+def properties_page(request: Request, q: str = "", kind: str = "all", publication: str = "all", property_id: int | None = None, page: int = 1):
     db = SessionLocal()
     try:
-        properties = (
-            db.query(Property)
-            .filter(Property.parent_property_id.is_(None))
-            .order_by(Property.name)
-            .all()
-        )
+        from app.operations.property_index import index_data
+        from app.operations.tasks import TaskError
+        try:data = index_data(db,q=q,kind=kind,publication=publication,property_id=property_id,page=page)
+        except TaskError as exc:raise HTTPException(422,str(exc)) from None
+        properties = data['properties']
         # Lazily backfill the outbound export token, same pattern as
         # owner_portal_token — existing properties get one on first visit
         # here rather than needing a migration to fill it in.
@@ -643,7 +573,7 @@ def properties_page(request: Request):
             "properties.html",
             {
                 "request": request,
-                "properties": properties,
+                **data,
                 "all_properties": all_properties,
                 "platforms": list(PlatformName),
             },
