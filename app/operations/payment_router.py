@@ -9,7 +9,7 @@ from app.operations.payment_ledger import link_state
 from app.operations.router import require_admin,templates
 
 router=APIRouter()
-STATES=('creating','awaiting_payment','confirmed','refund_pending','refund_failed','refunded')
+STATES=('creating','awaiting_payment','confirmed','refund_pending','refund_failed','refunded','cancelled')
 
 
 @router.get('/operations/payments')
@@ -18,6 +18,7 @@ def payments_page(request:Request,state:str='',review:bool=False,page:int=Query(
     old_attempt=datetime.utcnow()-timedelta(hours=23)
     # Persistent attempts are not proof of a charge or an expired provider intent.
     attention=or_(PublicPayment.state.in_(['refund_pending','refund_failed']),
+        and_(PublicPayment.state.in_(['creating','awaiting_payment']),PublicPayment.failure_code=='cancellation_unconfirmed'),
         and_(PublicPayment.state.in_(['creating','awaiting_payment']),db.query(PublicCheckoutHold).filter(
             PublicCheckoutHold.payment_id==PublicPayment.id,PublicCheckoutHold.expires_at<=datetime.utcnow()).exists()),
         and_(PublicPayment.state.in_(['creating','awaiting_payment']),PublicPayment.created_at<old_attempt),
