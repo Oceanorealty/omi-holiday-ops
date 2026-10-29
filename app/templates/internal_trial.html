@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Internal test — Omi Holiday{% endblock %}
+{% block content %}
+<h1>Internal test</h1>
+<p>Source observations for internal review. These snapshots do not publish listings, create operational bookings, assign cleaners or send messages. No platform writeback or payments are connected here.</p>
+<p>The two-week trial has not started. Source listings still need physical apartment mapping; missing orders and cleaning records are not inferred.</p>
+{% if not ready %}
+<h2>Prepare the private test area</h2>
+<p>This creates two separate test tables. Existing OPS records and scheduled processing are unchanged.</p>
+<form action="/operations/internal-test/initialize" method="post">
+<input type="hidden" name="token" value="{{ initialize_token }}">
+<button type="submit">Prepare test tables</button>
+</form>
+{% endif %}
+<h2>Preview a source snapshot</h2>
+<p>Upload sanitised JSON, up to 512 KiB. Exclude guest contact details, identity documents, payment details and invitation tokens.</p>
+<form action="/operations/internal-test/preview" method="post" enctype="multipart/form-data">
+<input type="hidden" name="token" value="{{ upload_token }}">
+<label>Source observations <input type="file" name="file" accept="application/json,.json" required></label>
+<button type="submit">Preview import</button>
+</form>
+{% if preview %}
+<h2>Review before importing</h2>
+<p>{{ preview.counts.listing }} source listings · {{ preview.counts.reservation }} reservations · {{ preview.counts.cleaning }} cleaning observations</p>
+<details><summary>Source records</summary><pre>{{ preview.manifest }}</pre></details>
+{% if ready %}<form action="/operations/internal-test/apply" method="post">
+<input type="hidden" name="manifest" value="{{ preview.manifest }}">
+<input type="hidden" name="digest" value="{{ preview.id }}">
+<input type="hidden" name="token" value="{{ apply_token }}">
+<button type="submit">Import into private test area</button>
+</form>{% else %}<p>Prepare the test tables, then preview again to import.</p>{% endif %}
+{% endif %}
+<h2>Test snapshots</h2>
+<ul>{% for batch in batches %}<li><a href="/operations/internal-test/{{ batch.id }}">{{ batch.id[:12] }}</a> · {{ batch.state }} · {{ batch.counts.listing }} listings, {{ batch.counts.reservation }} reservations, {{ batch.counts.cleaning }} cleaning observations</li>{% else %}<li>No source snapshots imported.</li>{% endfor %}</ul>
+{% if selected_id %}
+<h2>Source observations</h2>
+<p>Batch {{ selected_id[:12] }}. Records remain separate from live inventory and assignments.</p>
+<table><thead><tr><th>Kind</th><th>Source</th><th>Source ID</th><th>Details</th><th>Provenance</th></tr></thead>
+<tbody>{% for row in observations %}<tr><td>{{ row.kind }}</td><td>{{ row.provider }}</td><td>{{ row.source_id }}</td><td>{% if row.kind == 'listing' %}{{ row.title }} · {{ row.suburb or 'Suburb unknown' }}{% elif row.kind == 'reservation' %}{{ row.check_in }} → {{ row.check_out }} · {{ row.status }}{% else %}{{ row.due_date }} · {{ row.status }}{% endif %}</td><td>{{ row.provenance }}</td></tr>{% else %}<tr><td colspan="5">No active observations. This batch may have been archived.</td></tr>{% endfor %}</tbody></table>
+{% if observations %}<h2>Withdraw this test snapshot</h2><p>Hides this batch while retaining its original records for review. Existing OPS data is unchanged.</p>
+<form action="/operations/internal-test/{{ selected_id }}/rollback" method="post">
+<input type="hidden" name="token" value="{{ rollback_token }}">
+<label>Reason <input name="note" required maxlength="500"></label><button type="submit">Withdraw test snapshot</button>
+</form>{% endif %}
+{% endif %}
+{% endblock %}
