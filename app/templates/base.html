@@ -17,6 +17,7 @@
     {% from '_navigation.html' import groups, selected %}
     <nav id="primary-navigation" class="primary-nav" aria-label="Main navigation">
       <a href="/operations" class="{{ selected(request.url.path, '/operations') if request.url.path == '/operations' else '' }}">Overview</a>
+      <a href="/operations/internal-test" class="{{ 'active' if request.url.path.startswith('/operations/internal-test') else '' }}">Internal test · 真实房源空转</a>
       {% for label, links in groups %}
       {% set state = namespace(active=false) %}{% for href, title, description in links %}{% if selected(request.url.path, href)|trim %}{% set state.active = true %}{% endif %}{% endfor %}
       <details class="nav-group{% if state.active %} current-group{% endif %}"{% if state.active %} open{% endif %}>

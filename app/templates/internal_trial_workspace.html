@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Property test workspace — Omi Holiday{% endblock %}
+{% block content %}
+<style>
+.trial-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin:18px 0}.trial-card{border:1px solid #d4dce7;border-radius:12px;padding:18px;background:#fff}.trial-badge{display:inline-block;background:#e5f3ec;color:#165b39;padding:4px 9px;border-radius:6px;font-weight:600}.trial-warning{background:#fff3cd;border-left:4px solid #ad7b00;padding:14px;margin:14px 0}.trial-actions{display:flex;gap:10px;flex-wrap:wrap}.trial-actions form{margin:0}.trial-scroll{overflow-x:auto}.trial-calendar td,.trial-calendar th{padding:9px;min-width:54px}.trial-calendar td:first-child{min-width:220px}.trial-booked{background:#f5d695}.trial-open{background:#e8f3ef}.trial-card label{display:block;margin-top:10px}.trial-card input{max-width:100%}.trial-kpis{display:flex;gap:22px;flex-wrap:wrap;margin:16px 0}
+</style>
+<h1>真实房源 · 内部空转测试</h1>
+<p>这里展示已导入的真实平台房源资料，可以直接用这些卡片做功能空转。平台 listing 与实际公寓、单元号的对应关系仍待核对。</p>
+<div class="trial-warning"><strong>所有订单、客人、清洁安排、任务、金额及消息均为 SYNTHETIC TEST 模拟。</strong>本页不发消息、不通知清洁员、不扣款、不回写平台或正式库存。可立即空转测试；两周正式试用计时尚未启用。</div>
+<div class="trial-kpis"><strong>{{ source_count }} 个真实平台 listing</strong><span>{{ simulations|length }} 个当前模拟场景</span><span>实体公寓数量：待核对</span></div>
+<p><a href="/operations/internal-test/imports">来源导入与历史 · Import history</a> · <a href="/operations/internal-test/status">查看隔离状态</a></p>
+{% if not source_count %}<section class="card"><h2>先准备真实房源资料</h2><p>尚无有效来源 listing。<a href="/operations/internal-test/imports">Prepare test tables and import source listings</a>，然后返回这里空转。</p><p>Withdrawn source batches remain archived in Import history.</p></section>{% endif %}
+{% if source_count and not workflow_ready %}<section class="card"><h2>启用隔离空转流程</h2><p>保留已有房源来源资料和正式业务数据，为模拟场景准备独立区域。</p><form action="/operations/internal-test/prepare-workflows" method="post"><input type="hidden" name="token" value="{{ prepare_token }}"><button type="submit">启用内部空转</button></form></section>{% endif %}
+<form method="get" action="/operations/internal-test"><label for="trial-search">查找真实来源房源</label><input id="trial-search" name="q" value="{{ q }}" maxlength="100" placeholder="名称、地区或平台 ID"><button type="submit">查找</button></form>
+<section aria-label="真实平台房源卡片"><div class="trial-grid">
+{% for card in cards %}<article class="trial-card">
+<span class="trial-badge">真实来源 · {{ card.payload.provider }}</span>
+<h2>{{ card.payload.title }}</h2><p>{{ card.payload.suburb or '地区未提供' }}</p>
+<p><small>平台 ID：{{ card.payload.source_id }}</small></p>
+<p class="muted">具体地址 / 单元号：未核实<br>照片：未获取；不使用虚构房源照片</p>
+{% if card.source_conflict %}<p role="alert">来源快照有冲突，请先核对导入历史。</p>
+{% elif workflow_ready %}<details><summary>用此房源创建模拟订单</summary>
+<form method="post" action="/operations/internal-test/simulations">
+<input type="hidden" name="source_key" value="{{ card.key }}"><input type="hidden" name="fingerprint" value="{{ card.fingerprint }}"><input type="hidden" name="token" value="{{ card.create_token }}">
+<label>模拟入住日期 <input type="date" name="check_in" value="{{ default_start }}" required></label>
+<label>模拟退房日期 <input type="date" name="check_out" value="{{ default_end }}" required></label>
+<label>模拟每晚金额 AUD（非平台价格）<input type="number" name="nightly_rate" value="100.00" min="0.01" max="100000" step="0.01" required></label>
+<p>SYNTHETIC TEST GUEST，无真实客人资料。模拟库存按一个测试房源计算，真实容量未知。</p>
+<button type="submit">创建 SYNTHETIC TEST 订单</button></form></details>{% endif %}
+<details><summary>来源与核对说明</summary><p>{{ card.payload.provenance }}</p><p><a href="/operations/internal-test/{{ card.batch_id }}">查看原始导入批次</a></p></details>
+</article>{% else %}<p>没有匹配的有效来源 listing。</p>{% endfor %}
+</div></section>
+{% if workflow_ready %}
+<section class="card"><h2>14 天模拟日历</h2><p>只反映本区已确认的模拟订单；不代表平台实际可售日期或实际容量。</p>
+<div class="trial-scroll"><table class="trial-calendar"><thead><tr><th>真实来源房源</th>{% for day in calendar.dates %}<th>{{ day[5:] }}</th>{% endfor %}</tr></thead><tbody>
+{% for row in calendar.rows %}<tr><th>{{ row.title }}</th>{% for booked in row.cells %}<td class="{{ 'trial-booked' if booked else 'trial-open' }}">{{ '模拟占用' if booked else '模拟空闲' }}</td>{% endfor %}</tr>{% endfor %}
+</tbody></table></div></section>
+<section class="card"><h2>模拟订单 / 清洁 / 任务</h2><p>最多显示 500 个当前场景；已归档场景保留审计记录。</p>
+{% for row in simulations %}<article style="border-top:1px solid #d4dce7;padding:12px 0"><h3><a href="/operations/internal-test/simulations/{{ row.id }}">{{ row.title_snapshot }}</a></h3><p><strong>SYNTHETIC TEST</strong> · {{ row.data.check_in }} → {{ row.data.check_out }} · 订单 {{ row.data.reservation_status }} · 清洁 {{ row.data.cleaning_status }} · 任务 {{ row.data.task_status }}</p></article>{% else %}<p>还没有模拟场景。展开上方任一真实房源卡片，创建模拟订单。</p>{% endfor %}</section>
+{% endif %}
+{% if selected_scenario %}<section class="card" id="scenario"><h2>{{ selected_scenario.title_snapshot }} · 场景 {{ selected_scenario.id[:8] }}</h2>
+<p><strong>{{ selected_scenario.data.label }}</strong></p>
+<dl><dt>模拟订单</dt><dd>{{ selected_scenario.data.reservation_status }} · {{ selected_scenario.data.check_in }} → {{ selected_scenario.data.check_out }}</dd><dt>模拟金额</dt><dd>AUD {{ selected_scenario.data.simulated_total }} · {{ selected_scenario.data.payment_state }} · 不执行实际支付或退款</dd><dt>模拟清洁</dt><dd>{{ selected_scenario.data.cleaning_status }} · {{ selected_scenario.data.cleaner }}</dd><dt>模拟维护任务</dt><dd>{{ selected_scenario.data.task_status }}</dd></dl>
+{% set labels = {'confirm':'确认模拟订单','check_in':'模拟入住','check_out':'模拟退房','cancel':'取消模拟订单','simulate_payment':'模拟收款（不扣款）','assign_cleaning':'安排模拟清洁（不通知）','complete_cleaning':'完成模拟清洁','create_task':'创建模拟维护任务','complete_task':'完成模拟维护任务','preview_message':'预览消息（不发送）','archive':'结束并归档此模拟'} %}
+<div class="trial-actions">{% for item in selected_scenario.actions %}<form method="post" action="/operations/internal-test/simulations/{{ selected_scenario.id }}/{{ item.name }}"><input type="hidden" name="token" value="{{ item.token }}"><button type="submit">{{ labels[item.name] }}</button></form>{% endfor %}</div>
+{% if selected_scenario.data.message_preview %}<h3>消息预览</h3><p>{{ selected_scenario.data.message_preview }}</p>{% endif %}
+<h3>模拟操作记录</h3><ol>{% for event in selected_scenario.history %}<li>{{ event.revision }} · {{ event.action }} · {{ event.created_at }}</li>{% endfor %}</ol>
+</section>{% endif %}
+<section class="card"><h2>本轮空转覆盖</h2><p>模拟订单、日期冲突、日历、入住 / 退房、清洁、维护任务、消息预览及金额预览。平台实时同步、真实支付和对外发送尚未接入；不宣称这些外部功能已测试完成。</p></section>
+{% endblock %}

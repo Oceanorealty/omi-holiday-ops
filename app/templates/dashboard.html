@@ -1,6 +1,18 @@
 {% extends "base.html" %}
 {% block title %}Bookings — Omi Holiday{% endblock %}
 {% block content %}
+{% if internal_trial_property_cards %}
+<section class="card" aria-label="Real source properties internal test">
+  <h2>真实房源 · 内部空转测试</h2>
+  <p>{{ internal_trial_property_cards|length }} 个真实平台 listing 来源；实体公寓、具体地址与单元号待核实。下方入口使用隔离的模拟订单、日历、清洁与任务。</p>
+  <p><a class="btn primary" href="/operations/internal-test">打开真实房源并开始空转测试</a></p>
+  <div class="quick-actions">
+  {% for card in internal_trial_property_cards %}
+    <a class="quick-action" href="/operations/internal-test?q={{ card.payload.source_id|urlencode }}"><strong>{{ card.payload.title }}</strong><span>{{ card.payload.suburb or '地区未提供' }} · {{ card.payload.source_id }}</span></a>
+  {% endfor %}
+  </div>
+</section>
+{% endif %}
 
 <div class="page-head">
   <h1>Bookings</h1>
