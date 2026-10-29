@@ -111,6 +111,8 @@ app.include_router(my_work_router)
 from app.operations.staff_router import router as staff_router
 app.include_router(staff_router)
 app.include_router(public_router)
+from app.operations.internal_trial_router import router as internal_trial_router
+app.include_router(internal_trial_router)
 app.add_middleware(SessionAuthMiddleware)
 
 
