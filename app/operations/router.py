@@ -32,7 +32,11 @@ def overview(db):
     from zoneinfo import ZoneInfo
     from app.models import WorkOrder
     today = datetime.now(ZoneInfo("Australia/Brisbane")).date().isoformat()
+    from app.operations.internal_trial_workflows import listing_cards
+    trial_cards = listing_cards(db.get_bind())
     return {
+        "internal_trial_source_count": len(trial_cards),
+        "internal_trial_property_cards": trial_cards[:12],
         "overdue_work_orders": db.query(WorkOrder).filter(WorkOrder.status.in_(["open", "in_progress"]), WorkOrder.due_date < today).count(),
         "missing_sources": db.query(Booking).filter(Booking.source_missing_since.isnot(None), Booking.status == BookingStatus.confirmed).count(),
         "missing_amounts": db.query(Booking).filter(Booking.amount.is_(None), Booking.is_block.is_(False), Booking.status == BookingStatus.confirmed).count(),

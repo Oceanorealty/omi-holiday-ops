@@ -264,6 +264,15 @@ def dashboard(request: Request):
             for log in logs:
                 logs_by_booking.setdefault(log.booking_id, []).append(log)
 
+        trial_cards = []
+        try:
+            require_admin(request, db)
+        except HTTPException:
+            pass
+        else:
+            from app.operations.internal_trial_workflows import listing_cards
+            trial_cards = listing_cards(db.get_bind())
+
         return templates.TemplateResponse(
             "dashboard.html",
             {
@@ -272,6 +281,7 @@ def dashboard(request: Request):
                 "conflicts": conflicts,
                 "properties": properties,
                 "logs_by_booking": logs_by_booking,
+                "internal_trial_property_cards": trial_cards,
                 "now": datetime.utcnow(),
             },
         )
