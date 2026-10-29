@@ -1,6 +1,8 @@
 """Private administrator preview for isolated source observations."""
 import json
 import re
+from datetime import date, timedelta
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse
@@ -11,6 +13,7 @@ from app.db import get_db
 from app.operations.router import require_admin
 from app.operations.tasks import TaskError, form_token, verify_token
 from app.operations import internal_trial as trial
+from app.operations import internal_trial_workflows as workflow
 
 router = APIRouter(prefix="/operations/internal-test", dependencies=[Depends(require_admin)])
 templates = Jinja2Templates(directory="app/templates")
@@ -60,8 +63,104 @@ def _render(request, actor, engine, **extra):
 
 
 @router.get("")
-def index(request: Request, actor=Depends(require_admin), db=Depends(get_db)):
+def index(request: Request, q: str = "", actor=Depends(require_admin), db=Depends(get_db)):
+    return _workspace(request, actor, db.get_bind(), q=q)
+
+
+@router.get("/imports")
+def imports(request: Request, actor=Depends(require_admin), db=Depends(get_db)):
     return _render(request, actor, db.get_bind())
+
+
+def _workspace(request, actor, engine, *, q="", scenario_id=None):
+    try:
+        cards = workflow.listing_cards(engine)
+        workflow_ready = workflow.ready(engine)
+        scenario_rows = workflow.read(engine) if workflow_ready else []
+    except workflow.SimulationError as exc:
+        raise HTTPException(409, str(exc)) from None
+    total = len(cards)
+    query = q.strip()[:100].casefold()
+    cards = [card for card in cards if not query or query in
+             " ".join(str(v) for v in card["payload"].values()).casefold()]
+    for card in cards:
+        card["create_token"] = form_token(actor, purpose="trial-scenario-create:" +
+                                         card["key"] + ":" + card["fingerprint"])
+    selected = None
+    if scenario_id:
+        selected = next((row for row in scenario_rows if row["id"] == scenario_id), None)
+        if not selected:
+            raise HTTPException(404, "Active simulation not found")
+        selected["actions"] = [{"name": action, "token": form_token(actor,
+            SimpleNamespace(id=selected["id"], version=selected["revision"]),
+            purpose="trial-scenario-action:" + action)}
+            for action in workflow.available_actions(selected["data"])]
+        selected["history"] = workflow.history(engine, scenario_id)
+    today = date.today()
+    return templates.TemplateResponse(request=request, name="internal_trial_workspace.html",
+        context={"cards": cards, "source_count": total, "q": q.strip()[:100],
+            "workflow_ready": workflow_ready, "prepare_token": form_token(actor, purpose="trial-prepare-workflows"),
+            "simulations": scenario_rows, "selected_scenario": selected,
+            "default_start": today.isoformat(), "default_end": (today+timedelta(days=2)).isoformat(),
+            "calendar": workflow.calendar(engine, cards, today) if workflow_ready else None},
+        headers={"Cache-Control": "private, no-store", "X-Robots-Tag": "noindex, nofollow"})
+
+
+@router.post("/prepare-workflows")
+def prepare_workflows(token: str = Form(...), actor=Depends(require_admin), db=Depends(get_db)):
+    _verify(token, actor, "trial-prepare-workflows")
+    if not schema_ready(db.get_bind()):
+        raise HTTPException(409, "Prepare and import source listings first")
+    try:
+        workflow.prepare(db.get_bind())
+    except workflow.SimulationError as exc:
+        raise HTTPException(409, str(exc)) from None
+    return RedirectResponse("/operations/internal-test", status_code=303)
+
+
+@router.post("/simulations")
+def create_simulation(source_key: str = Form(...), fingerprint: str = Form(...),
+                      check_in: str = Form(...), check_out: str = Form(...),
+                      nightly_rate: str = Form(...), token: str = Form(...),
+                      actor=Depends(require_admin), db=Depends(get_db)):
+    _batch_id(source_key); _batch_id(fingerprint)
+    _verify(token, actor, "trial-scenario-create:" + source_key + ":" + fingerprint)
+    try:
+        if not workflow.ready(db.get_bind()):
+            raise workflow.SimulationError("Prepare the isolated workflow area first")
+        scenario_id = workflow.create(db.get_bind(), source_key=source_key, fingerprint=fingerprint,
+            check_in=check_in, check_out=check_out, nightly_rate=nightly_rate,
+            command_digest=workflow.digest(token), actor=actor)
+    except workflow.SimulationError as exc:
+        raise HTTPException(409, str(exc)) from None
+    return RedirectResponse("/operations/internal-test/simulations/" + scenario_id, status_code=303)
+
+
+@router.get("/simulations/{scenario_id}")
+def simulation_page(request: Request, scenario_id: str, actor=Depends(require_admin), db=Depends(get_db)):
+    if not re.fullmatch(r"[0-9a-f]{32}", scenario_id):
+        raise HTTPException(404, "Simulation not found")
+    return _workspace(request, actor, db.get_bind(), scenario_id=scenario_id)
+
+
+@router.post("/simulations/{scenario_id}/{action}")
+def simulation_action(scenario_id: str, action: str, token: str = Form(...),
+                      actor=Depends(require_admin), db=Depends(get_db)):
+    if not re.fullmatch(r"[0-9a-f]{32}", scenario_id) or action not in workflow.ACTIONS:
+        raise HTTPException(422, "Invalid simulation or action")
+    try:
+        revision = verify_token(token, actor, scenario_id, purpose="trial-scenario-action:" + action)
+    except TaskError as exc:
+        raise HTTPException(403, str(exc)) from None
+    try:
+        if not workflow.ready(db.get_bind()):
+            raise workflow.SimulationError("Prepare the isolated workflow area first")
+        workflow.apply_action(db.get_bind(), scenario_id=scenario_id, action=action, revision=revision,
+                              command_digest=workflow.digest(token), actor=actor)
+    except workflow.SimulationError as exc:
+        raise HTTPException(409, str(exc)) from None
+    path = "/operations/internal-test" if action == "archive" else "/operations/internal-test/simulations/" + scenario_id
+    return RedirectResponse(path, status_code=303)
 
 
 @router.get("/status")
@@ -80,7 +179,17 @@ def status(db=Depends(get_db)):
                 active_batches += 1
                 for row in json.loads(manifest):
                     counts[row["kind"]] += 1
-    return {"schema_ready": ready, "active_batches": active_batches,
+    try:
+        workflow_ready = workflow.ready(db.get_bind())
+    except workflow.SimulationError as exc:
+        raise HTTPException(409, str(exc)) from None
+    synthetic_count = 0
+    if workflow_ready:
+        with db.get_bind().connect() as conn:
+            synthetic_count = conn.execute(select(func.count()).select_from(workflow.scenarios)
+                .where(workflow.scenarios.c.archived.is_(False))).scalar_one()
+    return {"schema_ready": ready, "workflow_schema_ready": workflow_ready,
+            "active_synthetic_scenarios": synthetic_count, "active_batches": active_batches,
             "source_observations": counts, "physical_units_reconciled": False,
             "trial_started": False, "live_counts": live}
 
