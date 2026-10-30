@@ -12,6 +12,7 @@
     <input type="text" name="name" placeholder="Property name" required />
     <input type="text" name="address" placeholder="Address (optional)" />
     <input type="text" name="default_cleaner" placeholder="Default cleaner (optional)" />
+    <label>Property timezone <input name="time_zone" value="Australia/Brisbane" required maxlength="64" placeholder="IANA timezone"></label>
     <select name="parent_property_id">
       <option value="">Standalone property</option>
       {% for parent in all_properties if not parent.parent_property_id %}
@@ -35,6 +36,22 @@
   {% endif %}
 
   <h2 style="margin-top:20px">Management</h2>
+  <p>Property timezone: <strong>{{ p.time_zone }}</strong>. Calendar nights and arrival dates use this timezone.</p>
+  {% set core_tokens = property_details_tokens|default({}) %}
+  {% if core_tokens.get(p.id) %}
+  <details><summary>Edit core property details</summary>
+  <form method="post" action="/operations/properties/{{ p.id }}/details" class="form-row">
+    <input type="hidden" name="token_value" value="{{ core_tokens[p.id] }}">
+    <label>Property name <input name="name" value="{{ p.name }}" required maxlength="160"></label>
+    <label>Verified address <input name="address" value="{{ p.address or '' }}" maxlength="500" placeholder="Leave blank until verified"></label>
+    <label>Property timezone <input name="time_zone" value="{{ p.time_zone }}" required maxlength="64"></label>
+    <label>Default cleaner for future bookings <select name="default_cleaner"><option value="">Unset</option>
+    {% for cleaner in active_cleaners|default([]) %}<option value="{{ cleaner.name }}" {{ 'selected' if p.default_cleaner==cleaner.name }}>{{ cleaner.name }}</option>{% endfor %}
+    {% if p.default_cleaner and p.default_cleaner not in (active_cleaners|default([])|map(attribute='name')|list) %}<option value="{{ p.default_cleaner }}" selected>{{ p.default_cleaner }} (existing)</option>{% endif %}</select></label>
+    <label>Reason <input name="note" required minlength="10" maxlength="1000"></label>
+    <button class="btn">Save core details</button>
+  </form><p>This does not dispatch cleaners, change existing tasks or publish the listing. Timezone changes with existing reservations require separate review.</p></details>
+  {% endif %}
   <form method="post" action="/properties/{{ p.id }}/settings" class="form-row" style="align-items:flex-start">
     <input type="text" name="owner_name" placeholder="Owner name" value="{{ p.owner_name or '' }}" />
     <input type="email" name="owner_email" placeholder="Owner email (enables owner portal)" value="{{ p.owner_email or '' }}" style="flex:1;min-width:200px" />
@@ -80,7 +97,7 @@
   <form method="post" action="/properties/{{ p.id }}/listing" class="form-row" style="align-items:flex-start">
     <input type="text" name="suburb" placeholder="Suburb (e.g. Broadbeach)" value="{{ p.suburb or '' }}" />
     <input type="text" name="photo_url" placeholder="Photo URL" value="{{ p.photo_url or '' }}" style="flex:1;min-width:220px" />
-    <input type="number" name="bedrooms" placeholder="Beds" value="{{ p.bedrooms if p.bedrooms is not none else '' }}" style="width:80px" />
+    <input type="number" name="bedrooms" placeholder="Bedrooms" aria-label="Bedrooms" value="{{ p.bedrooms if p.bedrooms is not none else '' }}" style="width:100px" />
     <input type="number" name="bathrooms" placeholder="Baths" value="{{ p.bathrooms if p.bathrooms is not none else '' }}" style="width:80px" />
     <input type="number" name="max_guests" placeholder="Guests" value="{{ p.max_guests if p.max_guests is not none else '' }}" style="width:80px" />
     <input type="text" name="listing_url" placeholder="Booking link (Airbnb/Booking.com/etc)" value="{{ p.listing_url or '' }}" style="flex:1;min-width:220px" />
