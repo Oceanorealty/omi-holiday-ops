@@ -1,3 +1,6 @@
+from app.internal_module_trial import activate as activate_module_trial
+MODULE_TRIAL_ACTIVE = activate_module_trial()
+
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
@@ -52,7 +55,8 @@ from app.sync.ical_export import build_ics
 from app.sync.ical_sync import recompute_conflicts, sync_all, sync_feed
 
 from app.deployment import ensure_release_snapshot
-_release_snapshot = ensure_release_snapshot(engine, snapshot_schema='ops_backup_20261023_gapfill')
+_release_snapshot = ({'state':'isolated_trial_no_production_snapshot','tables':0} if MODULE_TRIAL_ACTIVE else
+                     ensure_release_snapshot(engine, snapshot_schema='ops_backup_20261023_gapfill'))
 print(f"OPS_RELEASE_SNAPSHOT state={_release_snapshot['state']} tables={_release_snapshot['tables']}", flush=True)
 migrate.run(engine)
 Base.metadata.create_all(bind=engine)
@@ -61,6 +65,11 @@ with SessionLocal() as _db:
     seed_default_templates(_db)
 
 app = FastAPI(title="Omi Holiday — Operations")
+if MODULE_TRIAL_ACTIVE:
+    from app.internal_module_trial import TrialBoundary
+    app.add_middleware(TrialBoundary)
+from app.operations.internal_module_trial_router import router as module_trial_router
+app.include_router(module_trial_router)
 from app.operations.task_router import router as task_router
 from app.operations.parity_router import router as parity_router
 from app.operations.channel_router import router as channel_router
