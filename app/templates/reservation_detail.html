@@ -4,6 +4,17 @@
 <p><a href="/operations/reservations">← Reservations</a></p>
 <p><a href="/operations/custom-fields/reservation/{{ booking.id }}">Custom fields</a></p>
 <div class="page-head"><h1>Reservation #{{ booking.id }}</h1></div>
+<section class="card" aria-labelledby="stay-summary"><h2 id="stay-summary">Stay summary</h2>
+<p><strong>{{ booking.property.name }}</strong> · {{ booking.platform.value }} · {{ booking.status.value }}</p>
+<p>{{ booking.check_in.date() }} → {{ booking.check_out.date() }} · {% if stay_nights %}{{ stay_nights }} night(s){% else %}Dates need review{% endif %} · {{ booking.property.time_zone }}</p>
+<p><a href="/properties?property_id={{ booking.property_id }}">Property details</a> · <a href="{{ stay_calendar_url }}">Calendar for this stay{% if calendar_clipped %} (first 62 nights){% endif %}</a></p>
+<h3>Cleaning</h3>
+{% if cleaning_task %}<p>Task #{{ cleaning_task.id }} · {{ 'cancelled' if cleaning_task.cancelled_at else cleaning_task.status.value }} · {{ cleaning_task.assignee or 'Unassigned' }} · Due {{ cleaning_task.due_date }}{% if cleaning_task.schedule_review_required %} · <strong>Schedule needs review</strong>{% endif %}</p>{% else %}<p>No cleaning task recorded.</p>{% endif %}
+<p><a href="/cleaning">Review cleaning tasks</a></p>
+<h3>Recorded account</h3>
+{% if account_needs_review %}<p>Account history needs review; balance not displayed.</p>{% elif account_summary %}<p>{{ account_summary.state }} · Recorded balance {{ account.currency }} {{ account_summary.balance }}</p>{% else %}<p>Account not configured — balance unknown.</p>{% endif %}
+<p><a href="/operations/accounts/{{ booking.id }}">Review charges, receipts and balance</a></p>
+</section>
 <p><a href="/operations/inbox/{{ booking.id }}">Open portal conversation</a></p>
 <p><a href="/operations/agreements?booking_id={{ booking.id }}">Review or issue stay agreement</a></p>
 <p><a href="/operations/accounts/{{ booking.id }}">Charges, external receipts and balance</a></p>
