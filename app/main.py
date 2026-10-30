@@ -583,6 +583,9 @@ def properties_page(request: Request, q: str = "", kind: str = "all", publicatio
         if changed:
             db.commit()
         all_properties = db.query(Property).order_by(Property.name).all()
+        from app.operations.property_details import details_token
+        actor = getattr(request.state,'username',None)
+        core_tokens = {p.id:details_token(actor,p) for p in properties} if actor else {}
         return templates.TemplateResponse(
             "properties.html",
             {
@@ -590,6 +593,8 @@ def properties_page(request: Request, q: str = "", kind: str = "all", publicatio
                 **data,
                 "all_properties": all_properties,
                 "platforms": list(PlatformName),
+                "property_details_tokens": core_tokens,
+                "active_cleaners": db.query(Cleaner).filter_by(active=True).order_by(Cleaner.name).all(),
             },
         )
     finally:
@@ -602,7 +607,12 @@ def create_property(
     address: str = Form(""),
     default_cleaner: str = Form(""),
     parent_property_id: str = Form(""),
+    time_zone: str = Form("UTC"),
 ):
+    from app.operations.property_details import validate_zone
+    from app.operations.tasks import TaskError
+    try:time_zone=validate_zone(time_zone)
+    except TaskError as exc:raise HTTPException(422,str(exc)) from None
     db = SessionLocal()
     try:
         prop = Property(
@@ -610,6 +620,7 @@ def create_property(
             address=address or None,
             default_cleaner=default_cleaner or None,
             parent_property_id=int(parent_property_id) if parent_property_id else None,
+            time_zone=time_zone,
         )
         db.add(prop)
         db.commit()
