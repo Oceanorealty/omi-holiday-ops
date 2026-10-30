@@ -98,6 +98,21 @@ from fastapi.responses import RedirectResponse
 from app.operations.reviews import ReviewError, apply_review
 
 
+@router.post('/operations/properties/{property_id}/details')
+def property_details_save(property_id:int,request:Request,token_value:str=Form(...),name:str=Form(...),
+                          address:str=Form(''),time_zone:str=Form(...),default_cleaner:str=Form(''),note:str=Form(...),
+                          db=Depends(get_db),admin=Depends(require_admin)):
+    from app.operations.property_details import save_details
+    from app.operations.tasks import TaskError
+    origin=request.headers.get('origin')
+    if not origin or origin.rstrip('/')!=str(request.base_url).rstrip('/'):
+        raise HTTPException(403,'Submit from this site')
+    try:save_details(db,actor=admin,property_id=property_id,token_value=token_value,name=name,address=address,
+                     time_zone=time_zone,default_cleaner=default_cleaner,note=note)
+    except TaskError as exc:raise HTTPException(409,str(exc)) from None
+    return RedirectResponse(f'/properties?property_id={property_id}',status_code=303)
+
+
 @router.get('/operations/property-cleanup')
 def property_cleanup_review(request: Request, ids: str, db=Depends(get_db), admin=Depends(require_admin)):
     from app.operations.property_cleanup import preview, parse_ids, CleanupError
