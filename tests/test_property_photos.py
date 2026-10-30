@@ -71,6 +71,8 @@ def test_public_gallery_hides_archived_records_and_internal_history(db,listing):
         app.dependency_overrides[require_admin]=lambda:'synthetic-admin'
         html=client.get(f'/operations/properties/{listing.id}/photos').text
         assert '<script>synthetic</script>' not in html and '&lt;script&gt;synthetic' in html
+        assert 'loading="lazy"' in html and 'referrerpolicy="no-referrer"' in html
+        assert '<img src="https://images.example.com/room.jpg"' in html
         listing.published=False;db.commit()
         assert client.get(f'/api/public/listings/{listing.id}').status_code==404
 
