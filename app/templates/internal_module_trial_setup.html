@@ -1,0 +1,5 @@
+{% extends 'base.html' %}{% block title %}房源资料导入 — Omi Holiday{% endblock %}{% block content %}
+<h1>房源资料导入</h1><p>当前 {{ property_count }} 条房源来源、{{ booking_count }} 条内部测试订单。导入后直接使用原来的 Properties、Reservations、Calendar、Cleaning、Tasks 和 Accounts。</p>
+<form method="post" action="/operations/module-trial/sources" enctype="multipart/form-data"><input type="hidden" name="token" value="{{ token }}"><label>已核实的 listing 基础资料 JSON（最大512KiB）<input type="file" name="file" accept="application/json,.json" required></label><button type="submit">导入原房源列表</button></form>
+<p>仅录入已核实来源名称和标识。地址、实体单元、真实容量、照片和描述未取得时保持未知，不自动虚构或获取。来源文件不进入公开仓库。<a href="/properties">进入原房源列表</a></p>
+{% endblock %}

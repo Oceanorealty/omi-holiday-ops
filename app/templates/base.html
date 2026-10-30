@@ -17,7 +17,7 @@
     {% from '_navigation.html' import groups, selected %}
     <nav id="primary-navigation" class="primary-nav" aria-label="Main navigation">
       <a href="/operations" class="{{ selected(request.url.path, '/operations') if request.url.path == '/operations' else '' }}">Overview</a>
-      <a href="/operations/internal-test" class="{{ 'active' if request.url.path.startswith('/operations/internal-test') else '' }}">Internal test · 真实房源空转</a>
+      {% if not request.state.internal_module_trial|default(false) %}<a href="/operations/internal-test" class="{{ 'active' if request.url.path.startswith('/operations/internal-test') else '' }}">Internal test · 真实房源空转</a>{% endif %}
       {% for label, links in groups %}
       {% set state = namespace(active=false) %}{% for href, title, description in links %}{% if selected(request.url.path, href)|trim %}{% set state.active = true %}{% endif %}{% endfor %}
       <details class="nav-group{% if state.active %} current-group{% endif %}"{% if state.active %} open{% endif %}>
@@ -32,6 +32,7 @@
     </form>
   </header>
   <main id="main-content" class="container" tabindex="-1">
+    {% if request.state.internal_module_trial|default(false) %}<div role="status" style="background:#fff0c9;border:2px solid #8a6416;padding:10px;margin-bottom:16px"><strong>内部功能测试 · 独立数据区</strong> · 房源为真实来源 listing，实体单元/地址/容量待核实；订单、客人、账款与清洁均为合成测试。每条来源仅设一个合成测试槽位，页面 available/入住率均不代表真实可售或真实入住率。外联、发布、真实付款和派单已封锁。</div>{% endif %}
     {% if request.url.path != '/operations/tools' %}
     {% for label, links in groups %}{% set state = namespace(active=false) %}{% for href, title, description in links %}{% if selected(request.url.path, href)|trim %}{% set state.active = true %}{% endif %}{% endfor %}
     {% if state.active %}<nav class="section-nav" aria-label="{{ label }} tools">{% for href, title, description in links %}<a href="{{ href }}" class="{{ selected(request.url.path, href) }}"{% if request.url.path == href %} aria-current="page"{% endif %}>{{ title }}</a>{% endfor %}</nav>{% endif %}{% endfor %}
