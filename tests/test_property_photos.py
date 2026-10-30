@@ -80,7 +80,79 @@ def test_gallery_limit_duplicate_and_cross_property_id(db,listing):
     with pytest.raises(TaskError):write(db,listing)
     other=prop(db)
     with pytest.raises(TaskError):write(db,other,action='cover',photo_id=first)
-    for index in range(49):db.add(PropertyPhoto(property_id=listing.id,url=f'https://images.example.com/{index}.jpg',alt_text='Synthetic',position=index+2,actor='synthetic-admin'))
+    for index in range(99):db.add(PropertyPhoto(property_id=listing.id,url=f'https://images.example.com/{index}.jpg',alt_text='Synthetic',position=index+2,actor='synthetic-admin'))
     db.commit()
     with pytest.raises(TaskError):write(db,listing,url='https://images.example.com/overflow.jpg')
-    assert db.query(PropertyPhoto).count()==50
+    assert db.query(PropertyPhoto).count()==100
+
+
+def manifest(listing,count=3,**changes):
+    data={'schema_version':1,'property_id':listing.id,'source_url':listing.listing_url,
+        'photos':[{'url':f'https://images.example.com/import-{i}.jpg','caption':'Synthetic source photo','alt_text':f'Synthetic photo {i+1}'} for i in range(count)]}
+    data.update(changes);return json.dumps(data).encode()
+
+
+def bulk(db,listing,content=None,**changes):
+    from app.operations.property_photos import import_photos
+    args={'actor':'synthetic-admin','property_id':listing.id,'token_value':token(db,'synthetic-admin',listing),
+          'content':manifest(listing) if content is None else content,'note':'Import synthetic verified source photos'}
+    args.update(changes);return import_photos(db,**args)
+
+
+@pytest.fixture
+def private_listing(db,listing):
+    listing.published=False;listing.listing_url='https://source.example.com/synthetic-room';db.commit();return listing
+
+
+def test_bulk_largest_observed_album_order_idempotency_and_no_outbound_records(db,private_listing):
+    from app.models import Booking,CleaningTask,MessageLog
+    r=bulk(db,private_listing,manifest(private_listing,87));assert r=={'added':87,'already_present':0}
+    photos=db.query(PropertyPhoto).order_by(PropertyPhoto.position).all()
+    assert len(photos)==87 and photos[0].url.endswith('import-0.jpg') and photos[-1].position==87
+    assert private_listing.photo_url.endswith('legacy.jpg') and private_listing.published is False
+    assert bulk(db,private_listing,manifest(private_listing,87))=={'added':0,'already_present':87}
+    assert db.query(OpsCommand).count()==1
+    assert db.query(Booking).count()==db.query(CleaningTask).count()==db.query(MessageLog).count()==0
+
+
+@pytest.mark.parametrize('change',[{'property_id':999},{'source_url':'https://other.example.com/source'},
+    {'photos':[{'url':'http://images.example.com/a','caption':'','alt_text':'Synthetic'}]},
+    {'photos':[{'url':'https://images.example.com/a?access_token=synthetic','caption':'','alt_text':'Synthetic'}]},
+    {'photos':[{'url':'https://images.example.com/a','caption':'','alt_text':'Synthetic','unexpected':'extra data'}]},
+    {'photos':[]},{'extra':'data'}])
+def test_bulk_mismatch_and_invalid_manifest_make_no_changes(db,private_listing,change):
+    with pytest.raises(TaskError):bulk(db,private_listing,manifest(private_listing,**change))
+    assert db.query(PropertyPhoto).count()==db.query(OpsCommand).count()==0
+
+
+def test_bulk_published_stale_archived_overflow_and_atomic_rollback(db,private_listing):
+    old=token(db,'synthetic-admin',private_listing);write(db,private_listing,url='https://images.example.com/elsewhere.jpg')
+    with pytest.raises(TaskError):bulk(db,private_listing,token_value=old)
+    private_listing.published=True;db.commit()
+    with pytest.raises(TaskError):bulk(db,private_listing)
+    private_listing.published=False;db.commit()
+    first=db.query(PropertyPhoto).one();write(db,private_listing,action='archive',photo_id=first.id)
+    data=json.loads(manifest(private_listing));data['photos'][0]['url']=first.url
+    with pytest.raises(TaskError):bulk(db,private_listing,json.dumps(data).encode())
+    with pytest.raises(TaskError):bulk(db,private_listing,manifest(private_listing,100))
+    with pytest.raises(TaskError):bulk(db,private_listing,note='bad')
+    assert db.query(PropertyPhoto).count()==1
+    assert db.query(OpsCommand).count()==2
+
+
+def test_bulk_router_auth_origin_and_normal_gallery_entry(db,private_listing):
+    app=FastAPI();app.include_router(router);app.dependency_overrides[get_db]=lambda:db
+    path=f'/operations/properties/{private_listing.id}/photos'
+    with TestClient(app,follow_redirects=False) as client:
+        assert client.get(path).status_code==403
+        app.dependency_overrides[require_admin]=lambda:'synthetic-admin'
+        page=client.get(path);assert 'Import verified source gallery' in page.text
+        tok=re.search(r'name="token_value" value="([^"]+)"',page.text).group(1)
+        import html
+        data={'token_value':html.unescape(tok),'note':'Import synthetic source gallery'}
+        files={'file':('synthetic.json',manifest(private_listing),'application/json')}
+        assert client.post(path+'/import',data=data,files=files).status_code==403
+        assert client.post(path+'/import',data=data,files=files,headers={'Origin':'https://other.invalid'}).status_code==403
+        response=client.post(path+'/import',data=data,files=files,headers={'Origin':'http://testserver'})
+        assert response.status_code==303 and response.headers['location']==path
+        assert db.query(PropertyPhoto).count()==3
