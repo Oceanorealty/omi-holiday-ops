@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block title %}Review fixture removal — Omi Holiday{% endblock %}
+{% block content %}
+<h1>Review exact test records for permanent removal</h1>
+<p>This removes only the property IDs and zero statement listed below. It creates no backup and cannot be undone through OPS. Existing audit history remains. No messages, payments, channel changes or cleaner assignments are sent.</p>
+<h2>Properties</h2><ul>{% for p in report.properties %}<li>#{{ p.id }} · {{ p.name }} · {{ 'Published' if p.published else 'Unpublished' }}</li>{% endfor %}</ul>
+<h2>Statements</h2><ul>{% for s in report.statements %}<li>#{{ s.id }} · property #{{ s.property_id }} · {{ s.period }} · entirely zero: {{ s.all_amounts_zero }} · eligible: {{ s.eligible }}</li>{% else %}<li>No statements selected.</li>{% endfor %}</ul>
+<details><summary>Dependency counts</summary><ul>{% for r in report.references %}<li>{{ r.reference }}: {{ r.count }}</li>{% endfor %}</ul></details>
+{% if report.blockers %}<h2>Removal blocked</h2><ul>{% for b in report.blockers %}<li>{{ b }}</li>{% endfor %}</ul>
+{% else %}<form method="post">
+<input type="hidden" name="target_ids" value="{{ target_ids }}"><input type="hidden" name="statement_ids" value="{{ statement_ids }}">
+<input type="hidden" name="digest" value="{{ report.digest }}"><input type="hidden" name="token" value="{{ token }}">
+<label>Type DELETE THESE TEST RECORDS <input name="confirmation" required autocomplete="off"></label>
+<button class="btn" type="submit">Permanently remove these exact test records</button>
+</form>{% endif %}<p><a href="/properties">Return without changes</a></p>
+{% endblock %}

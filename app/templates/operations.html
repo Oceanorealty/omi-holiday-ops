@@ -1,8 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Operations overview — Omi Holiday{% endblock %}
 {% block content %}
-<section class="card" aria-label="Internal property test workspace"><h2>真实房源 · 内部空转测试</h2><p>{{ internal_trial_source_count }} 个真实平台 listing 来源资料；实体公寓与单元号仍待核对。模拟订单、清洁和任务不进入正式业务流程。</p><p><a class="btn" href="/operations/internal-test">打开真实房源卡片并开始空转</a></p>
-{% if internal_trial_property_cards %}<ul>{% for card in internal_trial_property_cards %}<li><a href="/operations/internal-test?q={{ card.payload.source_id|urlencode }}">{{ card.payload.title }}</a> · {{ card.payload.suburb or '地区未提供' }}</li>{% endfor %}</ul>{% endif %}</section>
 <div class="page-head"><h1>Operations overview</h1><p class="muted">Resolve gaps before they affect a guest or an owner.</p></div>
 <nav class="quick-actions" aria-label="Common actions">
 <a class="quick-action" href="/operations/calendar"><strong>Open calendar</strong><span>Check dates and availability</span></a>
