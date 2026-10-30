@@ -1,0 +1,33 @@
+# Review-only dedicated FREE service. No credentials or private business data.
+# Existing B5 database receives no Blueprint changes. Credentials set securely.
+services:
+  - type: web
+    name: omi-holiday-ops-internal-test
+    runtime: python
+    plan: free
+    region: oregon
+    repo: https://github.com/Oceanorealty/omi-holiday-ops
+    branch: codex/original-module-free-trial-20261030
+    buildCommand: pip install -r requirements.txt
+    startCommand: python tools/run_internal_module_trial.py --hosted
+    healthCheckPath: /healthz
+    autoDeployTrigger: "off"
+    envVars:
+      - key: OPS_INTERNAL_MODULE_TRIAL
+        value: "1"
+      - key: OPS_MODULE_TRIAL_HOSTED
+        value: "1"
+      - key: OPS_MODULE_TRIAL_PG
+        value: "1"
+      - key: DATABASE_URL
+        sync: false
+      - key: OPS_TRIAL_PG_HOST
+        sync: false
+      - key: OPS_TRIAL_PG_DATABASE
+        sync: false
+      - key: ADMIN_USER
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SECRET_KEY
+        sync: false
