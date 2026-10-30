@@ -1,11 +1,11 @@
-from fastapi import APIRouter,Depends,Form,HTTPException,Request
+from fastapi import APIRouter,Depends,Form,HTTPException,Request,UploadFile,File
 from fastapi.responses import RedirectResponse
 from app.db import get_db
 from app.models import Property,OpsCommand
 from app.operations.router import require_admin,templates
 from app.operations.parity_router import same_origin
 from app.operations.tasks import TaskError
-from app.operations.property_photos import rows,token,save
+from app.operations.property_photos import rows,token,save,import_photos
 import json
 router=APIRouter()
 
@@ -28,5 +28,15 @@ def save_photo(property_id:int,request:Request,token_value:str=Form(...),action:
                url:str=Form(''),caption:str=Form(''),alt_text:str=Form(''),note:str=Form(...),db=Depends(get_db),admin=Depends(require_admin)):
     same_origin(request)
     try:save(db,actor=admin,property_id=property_id,token_value=token_value,action=action,photo_id=photo_id,url=url,caption=caption,alt_text=alt_text,note=note)
+    except TaskError as exc:raise HTTPException(409,str(exc)) from None
+    return RedirectResponse(f'/operations/properties/{property_id}/photos',status_code=303)
+
+
+@router.post('/operations/properties/{property_id}/photos/import')
+def import_photo_manifest(property_id:int,request:Request,token_value:str=Form(...),note:str=Form(...),
+                          file:UploadFile=File(...),db=Depends(get_db),admin=Depends(require_admin)):
+    same_origin(request)
+    if not request.headers.get('origin'):raise HTTPException(403,'Submit from this site')
+    try:import_photos(db,actor=admin,property_id=property_id,token_value=token_value,content=file.file.read(524289),note=note)
     except TaskError as exc:raise HTTPException(409,str(exc)) from None
     return RedirectResponse(f'/operations/properties/{property_id}/photos',status_code=303)
