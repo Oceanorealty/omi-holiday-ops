@@ -98,6 +98,55 @@ from fastapi.responses import RedirectResponse
 from app.operations.reviews import ReviewError, apply_review
 
 
+@router.get('/operations/property-cleanup')
+def property_cleanup_review(request: Request, ids: str, db=Depends(get_db), admin=Depends(require_admin)):
+    from app.operations.property_cleanup import preview, parse_ids, CleanupError
+    from app.operations.tasks import form_token
+    try:
+        selected = parse_ids(ids)
+        report = preview(db.connection(), selected)
+        token = form_token(admin, purpose='property-cleanup:'+report['digest'])
+    except CleanupError as exc:
+        raise HTTPException(409, str(exc)) from None
+    return templates.TemplateResponse(request=request, name='property_cleanup.html', context={
+        'report':report,'target_ids':','.join(map(str,selected)),
+        'statement_ids':','.join(str(r['id']) for r in report['statements']),'token':token},
+        headers={'Cache-Control':'no-store'})
+
+
+@router.post('/operations/property-cleanup')
+def property_cleanup_apply(request: Request, target_ids: str=Form(...), statement_ids: str=Form(''),
+                           digest: str=Form(...), token: str=Form(...), confirmation: str=Form(...),
+                           db=Depends(get_db), admin=Depends(require_admin)):
+    import hashlib
+    import json
+    from app.operations.property_cleanup import remove, parse_ids, CleanupError
+    from app.operations.tasks import verify_token, TaskError
+    from app.models import OpsCommand
+    origin=request.headers.get('origin')
+    if not origin or origin.rstrip('/') != str(request.base_url).rstrip('/'):
+        raise HTTPException(403,'Submit from this site')
+    try:
+        if confirmation != 'DELETE THESE TEST RECORDS':
+            raise CleanupError('Type the exact confirmation shown on the review page')
+        selected=parse_ids(target_ids)
+        statements=parse_ids(statement_ids) if statement_ids.strip() else []
+        verify_token(token,admin,0,purpose='property-cleanup:'+digest)
+        report=remove(db.connection(),selected,digest,statements)
+        db.add(OpsCommand(token_digest=hashlib.sha256(token.encode()).hexdigest(),
+            purpose='property-fixture-cleanup',actor=admin,
+            note='Explicit administrator removal of reviewed internal fixture records; no backup requested.',
+            payload=json.dumps({'properties':report['properties'],'statement_ids':statements,'review_digest':digest},sort_keys=True)))
+        db.commit()
+    except (CleanupError,TaskError) as exc:
+        db.rollback()
+        raise HTTPException(409,str(exc)) from None
+    except Exception:
+        db.rollback()
+        raise
+    return RedirectResponse('/properties',status_code=303)
+
+
 @router.post("/operations/reviews/{kind}/{entity_id}/{action}")
 def save_review(kind: str, entity_id: int, action: str, request: Request,
                 token: str = Form(...), note: str = Form(...),
