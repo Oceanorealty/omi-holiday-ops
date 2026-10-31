@@ -90,7 +90,7 @@ def test_calendar_views_keep_scope_and_checkout_semantics(db,monkeypatch):
     app=FastAPI();app.include_router(router)
     app.dependency_overrides[get_db]=lambda:db
     app.dependency_overrides[require_admin]=lambda:'synthetic-admin'
-    url=f'/operations/calendar?start=2026-10-21&end=2026-10-24&property_id={p.id}'
+    url=f'/operations/calendar?start=2026-10-21&end=2026-10-24&property_id={p.id}&view=grid'
     with TestClient(app) as client:
         response=client.get(url);assert response.status_code==200
         text=html.unescape(response.text)

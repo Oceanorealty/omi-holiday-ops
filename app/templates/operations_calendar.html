@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Calendar — Omi Holiday{% endblock %}
 {% block content %}
+{% if view == 'board' %}{% include '_calendar_board.html' %}{% else %}
 <div class="page-head"><h1>Property calendar</h1><p>Reservations, blocked nights and records that need attention.</p></div>
 <style>
 .portfolio-calendar{max-height:70vh;overflow:auto;isolation:isolate}
@@ -75,5 +76,6 @@
 </tbody></table></div>
 </section>
 {% else %}<section class="card"><p>No properties in this selection.</p></section>{% endfor %}
+{% endif %}
 {% endif %}
 {% endblock %}

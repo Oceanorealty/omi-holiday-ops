@@ -9,19 +9,20 @@
 <body class="ops-shell">
   <a class="skip-link" href="#main-content">Skip to content</a>
   <header class="topbar">
-    <a class="brand" href="/operations">
+    <a class="brand" href="/operations/calendar">
       <img class="brand-mark" src="/static/omi-mark.png" alt="Omi" />
       <span class="brand-sub">Operations</span>
     </a>
     <button type="button" class="nav-toggle-btn" data-nav-toggle aria-controls="primary-navigation" aria-expanded="false" hidden>Menu</button>
     {% from '_navigation.html' import groups, selected %}
     <nav id="primary-navigation" class="primary-nav" aria-label="Main navigation">
+      <a href="/operations/calendar" class="{{ 'active' if request.url.path == '/operations/calendar' else '' }}">Calendar</a>
       <a href="/operations" class="{{ selected(request.url.path, '/operations') if request.url.path == '/operations' else '' }}">Overview</a>
       {% for label, links in groups %}
-      {% set state = namespace(active=false) %}{% for href, title, description in links %}{% if selected(request.url.path, href)|trim %}{% set state.active = true %}{% endif %}{% endfor %}
+      {% set state = namespace(active=false) %}{% for href, title, description in links %}{% if href != '/operations/calendar' and selected(request.url.path, href)|trim %}{% set state.active = true %}{% endif %}{% endfor %}
       <details class="nav-group{% if state.active %} current-group{% endif %}"{% if state.active %} open{% endif %}>
         <summary>{{ label }}</summary>
-        <div class="nav-menu">{% for href, title, description in links %}<a href="{{ href }}" class="{{ selected(request.url.path, href) }}"{% if request.url.path == href %} aria-current="page"{% endif %}>{{ title }}</a>{% endfor %}</div>
+        <div class="nav-menu">{% for href, title, description in links %}{% if href != '/operations/calendar' %}<a href="{{ href }}" class="{{ selected(request.url.path, href) }}"{% if request.url.path == href %} aria-current="page"{% endif %}>{{ title }}</a>{% endif %}{% endfor %}</div>
       </details>
       {% endfor %}
       <a href="/operations/tools" class="{{ 'active' if request.url.path == '/operations/tools' else '' }}">Find a tool</a>
@@ -32,7 +33,7 @@
   </header>
   <main id="main-content" class="container" tabindex="-1">
     {% if request.url.path != '/operations/tools' %}
-    {% for label, links in groups %}{% set state = namespace(active=false) %}{% for href, title, description in links %}{% if selected(request.url.path, href)|trim %}{% set state.active = true %}{% endif %}{% endfor %}
+    {% for label, links in groups %}{% set state = namespace(active=false) %}{% for href, title, description in links %}{% if href != '/operations/calendar' and selected(request.url.path, href)|trim %}{% set state.active = true %}{% endif %}{% endfor %}
     {% if state.active %}<nav class="section-nav" aria-label="{{ label }} tools">{% for href, title, description in links %}<a href="{{ href }}" class="{{ selected(request.url.path, href) }}"{% if request.url.path == href %} aria-current="page"{% endif %}>{{ title }}</a>{% endfor %}</nav>{% endif %}{% endfor %}
     {% endif %}
     {% block content %}{% endblock %}

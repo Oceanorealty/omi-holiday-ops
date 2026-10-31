@@ -236,6 +236,11 @@ def logout():
 
 
 @app.get("/")
+def calendar_home():
+    return RedirectResponse("/operations/calendar", status_code=303)
+
+
+@app.get("/source-booking-records")
 def dashboard(request: Request):
     db = SessionLocal()
     try:

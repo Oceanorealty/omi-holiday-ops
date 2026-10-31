@@ -3,7 +3,7 @@
   "name": "ops",
   "short_name": "ops",
   "description": "Omi Holiday operations",
-  "start_url": "/operations",
+  "start_url": "/operations/calendar",
   "scope": "/",
   "display": "standalone",
   "background_color": "#0a1420",
