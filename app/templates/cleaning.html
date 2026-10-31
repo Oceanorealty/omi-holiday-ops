@@ -77,8 +77,8 @@
   </thead>
   <tbody>
     {% for t in tasks %}
-    <tr class="{{ 'conflict' if t.due_date.date() < now.date() else '' }}">
-      <td>{{ t.booking.property.name }}</td>
+    <tr id="cleaning-task-{{ t.id }}" class="{{ 'conflict' if t.due_date.date() < now.date() else '' }}">
+      <td>{{ t.booking.property.name }}<br><a href="/operations/reservations/{{ t.booking_id }}">Reservation #{{ t.booking_id }}</a></td>
       <td>
         {{ t.due_date.strftime('%Y-%m-%d') }}
         {% if t.due_date.date() < now.date() %}<span class="tag tag-warn">overdue</span>{% endif %}
@@ -128,8 +128,8 @@
   </thead>
   <tbody>
     {% for t in done_tasks %}
-    <tr>
-      <td>{{ t.booking.property.name }}</td>
+    <tr id="cleaning-task-{{ t.id }}">
+      <td>{{ t.booking.property.name }}<br><a href="/operations/reservations/{{ t.booking_id }}">Reservation #{{ t.booking_id }}</a></td>
       <td>{{ t.due_date.strftime('%Y-%m-%d') }}</td>
       <td>{{ t.assignee or '—' }}</td>
       <td>

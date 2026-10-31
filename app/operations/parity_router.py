@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 from sqlalchemy import or_, func
 from urllib.parse import urlencode
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
@@ -14,7 +15,7 @@ from app.models import (Booking, BookingStatus, Cleaner, Guest, PlatformName, Ic
                         Property, PropertyPhoto, ReservationEvent, StaffUser, CleaningTask, BookingAccount)
 from app.operations.calendar import calendar_data
 from app.operations.inventory import inventory_rows, inventory_token, save_inventory
-from app.operations.reservations import reservation_token, save_reservation
+from app.operations.reservations import reservation_token, save_reservation, stay_dates
 from app.operations.router import require_admin, templates
 from app.operations.tasks import TaskError
 from app.operations.pricing_limits import limits_token, save_limits
@@ -111,6 +112,7 @@ def setup(request: Request, db=Depends(get_db), admin=Depends(require_admin)):
 @router.get('/operations/reservations')
 def reservation_list(request: Request, property_id: str = '', status: str = 'confirmed',
                      q: str = '', channel: str = '', start: str = '', end: str = '', page: int = 1,
+                     draft_check_in: str = '', draft_check_out: str = '',
                      db=Depends(get_db), admin=Depends(require_admin)):
     property_id = optional_property(property_id)
     if status not in ('confirmed', 'cancelled', 'all'):
@@ -120,6 +122,15 @@ def reservation_list(request: Request, property_id: str = '', status: str = 'con
         raise HTTPException(422, 'Use a search up to 120 characters and a page between 1 and 500')
     if channel and channel not in {p.value for p in PlatformName}:
         raise HTTPException(422, 'Unknown booking source')
+    draft_booking = None
+    if draft_check_in or draft_check_out:
+        if property_id is None:
+            raise HTTPException(422, 'Select a property before prefilling reservation dates')
+        try:
+            arrival, departure = stay_dates(draft_check_in, draft_check_out)
+        except TaskError as exc:
+            raise HTTPException(422, str(exc)) from None
+        draft_booking = SimpleNamespace(check_in=arrival, check_out=departure, amount=None, guest=None)
     try:
         lower = date.fromisoformat(start) if start else None
         upper = date.fromisoformat(end) if end else None
@@ -152,6 +163,7 @@ def reservation_list(request: Request, property_id: str = '', status: str = 'con
     filters = dict(property_id=property_id or '', status=status, q=q, channel=channel, start=start, end=end)
     return templates.TemplateResponse(request=request, name='reservations.html', context={
         'rows': rows[:200], 'truncated': len(rows) > 200, 'status': status, 'property_id': property_id,
+        'draft_booking': draft_booking,
         **filters, 'page': page, 'channels': [p.value for p in PlatformName],
         'previous_url': '/operations/reservations?' + urlencode({**filters, 'page': page - 1}) if page > 1 else None,
         'next_url': '/operations/reservations?' + urlencode({**filters, 'page': page + 1}) if len(rows) > 200 and page < 500 else None,
