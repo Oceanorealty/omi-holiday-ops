@@ -858,8 +858,19 @@ def assign_cleaning_task(task_id: int, assignee: str = Form(""), cleaner_id: str
     try:
         task = db.get(CleaningTask, task_id)
         if task and task.cancelled_at is None:
+            selected_id = None
+            if cleaner_id:
+                raw = str(cleaner_id)
+                if not raw.isascii() or not raw.isdecimal() or len(raw) > 18 or int(raw) < 1:
+                    raise HTTPException(422, "Choose a valid cleaner")
+                selected_id = int(raw)
+                selected = db.get(Cleaner, selected_id)
+                if selected is None or (not selected.active and task.cleaner_id != selected_id):
+                    raise HTTPException(409, "Cleaner is no longer available; reload and choose an active cleaner")
+            # Existing inactive assignments may be retained for history, but a
+            # stale form cannot newly assign an inactive or missing cleaner.
             task.assignee = assignee or None
-            task.cleaner_id = int(cleaner_id) if cleaner_id else None
+            task.cleaner_id = selected_id
             if task.status != CleaningStatus.done:
                 task.status = CleaningStatus.assigned if (assignee or cleaner_id) else CleaningStatus.pending
             db.commit()
