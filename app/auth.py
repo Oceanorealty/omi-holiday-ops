@@ -123,4 +123,9 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
             return JSONResponse({'detail':'Administrator access required; use My work for assigned tasks'},status_code=403)
 
         next_url = path if request.method == "GET" else "/"
+        if request.method == "GET" and request.url.query:
+            # Keep the original filters inside one encoded next parameter.
+            from urllib.parse import urlencode
+            next_url += "?" + request.url.query
+            return RedirectResponse(url="/login?" + urlencode({"next": next_url}), status_code=303)
         return RedirectResponse(url=f"/login?next={next_url}", status_code=303)
