@@ -1,6 +1,8 @@
 """Synthetic admin search: scope, literal matching, nights and pagination."""
 from datetime import datetime
 from html import unescape
+import re
+from urllib.parse import urlsplit
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from app.db import get_db
@@ -8,6 +10,10 @@ from app.models import Booking, Guest, PlatformName
 from app.operations.parity_router import router
 from app.operations.router import require_admin
 from test_operations import db,prop,booking
+
+
+def reservation_link_paths(html):
+    return {urlsplit(unescape(href)).path for href in re.findall(r'href="([^"]+)"',html)}
 
 
 def client_for(db):
@@ -29,13 +35,13 @@ def test_search_literal_guest_email_reference_and_night_scope(db,monkeypatch):
         for term in ['alice@example.invalid','alice_100%','REF-literal_%',str(wanted.id)]:
             response=client.get(base,params={'q':term,'property_id':p.id,'channel':'direct','start':'2026-10-22','end':'2026-10-23'})
             assert response.status_code==200
-            assert f'href="/operations/reservations/{wanted.id}"' in response.text
+            assert f'/operations/reservations/{wanted.id}' in reservation_link_paths(response.text)
         for params in [{'start':'2026-10-23','end':'2026-10-24'}, {'q':'not-present'}, {'channel':'airbnb','property_id':p.id}]:
             response=client.get(base,params=params)
-            assert f'href="/operations/reservations/{wanted.id}"' not in response.text
+            assert f'/operations/reservations/{wanted.id}' not in reservation_link_paths(response.text)
         # SQL wildcards in a search must be treated literally.
         literal=client.get(base,params={'q':'%'}).text
-        assert f'href="/operations/reservations/{wanted.id}"' in literal
+        assert f'/operations/reservations/{wanted.id}' in reservation_link_paths(literal)
         assert 'Different listing' not in literal
         for params in [{'start':'bad'},{'start':'2026-10-24','end':'2026-10-23'}, {'channel':'invalid'}, {'page':0},{'page':501},{'q':'x'*121}]:
             assert client.get(base,params=params).status_code==422
@@ -54,6 +60,6 @@ def test_pagination_preserves_filters_and_does_not_drop_older_orders(db,monkeypa
         assert f'property_id={p.id}&status=confirmed&q=Archive-&channel=direct&start=2026-10-21&end=2026-10-24&page=2' in unescape(first.text)
         second=client.get('/operations/reservations',params={**params,'page':2})
         assert second.status_code==200 and 'Previous page' in second.text and 'Next page' not in second.text
-        assert 'href="/operations/reservations/1"' in second.text
-        assert 'href="/operations/reservations/1"' not in first.text
+        assert '/operations/reservations/1' in reservation_link_paths(second.text)
+        assert '/operations/reservations/1' not in reservation_link_paths(first.text)
         assert db.query(Booking).count()==201
