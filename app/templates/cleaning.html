@@ -1,22 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Cleaning — Omi Holiday{% endblock %}
-{% block content %}
-
-<div class="page-head">
-  <h1>Cleaning</h1>
-  <form method="post" action="/sync">
-    <button class="btn primary" type="submit">Sync now</button>
-  </form>
-</div>
-
-<section class="card"><h2>Open cleaning work</h2>
-<form method="get" class="form-row"><label>Property <select name="property_id"><option value="">All properties</option>{% for p in properties|default([]) %}<option value="{{ p.id }}"{% if selected_property_id==p.id %} selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label><input type="hidden" name="view" value="{{ queue_view|default('open') }}"><button class="btn">Filter property</button><a href="/cleaning">Reset filters</a></form>
-{% if queue_counts is defined %}<nav class="section-nav" aria-label="Open cleaning filters">{% for value,label in [('open','All open'),('unassigned','Unassigned'),('overdue','Overdue')] %}<a href="/cleaning?property_id={{ selected_property_id or '' }}&amp;view={{ value }}"{% if queue_view==value %} aria-current="page"{% endif %}>{{ label }} ({{ queue_counts[value] }})</a>{% endfor %}</nav>{% endif %}
-{% if timezone_unknown_count|default(0) %}<p class="tag tag-warn">{{ timezone_unknown_count }} open task(s) have an invalid property timezone; overdue status is unknown. <a href="/properties">Review property settings</a>.</p>{% endif %}
-</section>
-
-<section class="card">
-  <h2>Cleaners</h2>
+{% block title %}Cleaning — Omi Holiday</section>
+<details class="card"><summary>Manage cleaners</summary>
   <div class="table-wrap">
   <table class="table small">
     <thead><tr><th>Name</th><th>Pay</th><th>Portal link</th></tr></thead>
@@ -44,11 +28,11 @@
     <input type="number" step="0.01" name="pay_rate" placeholder="Rate $" style="width:110px" />
     <button class="btn" type="submit">Add cleaner</button>
   </form>
-</section>
+</details>
+
 
 {% if linen_rows %}
-<section class="card">
-  <h2>Linen needed (upcoming)</h2>
+<details class="card"><summary>Linen needed (upcoming)</summary>
   <div class="table-wrap">
   <table class="table small">
     <thead><tr><th>Date</th><th>Sets needed</th></tr></thead>
@@ -60,16 +44,38 @@
   </table>
   </div>
   <p class="muted">Estimated from each property's bedroom count on checkout day.</p>
-</section>
+</details>
 {% endif %}
 
+
+<details class="card"><summary>Calendar sync tools</summary><p>Sync may update reservations and cleaning work. It is separate from completing the current task.</p>
+  <form method="post" action="/sync">
+    <button class="btn primary" type="submit">Sync now</button>
+  </form>
+</details>
+{% endblock %}
+{% block content %}
+{% if form_error %}<section class="card" role="alert" id="form-error"><h2>Review before saving again</h2><p>{{ form_error }}</p><p>Check the recorded status before submitting again. Free text, contact details and external references are not copied; re-enter them if needed.</p></section>{% endif %}
+
+<div class="page-head">
+  <h1>Cleaning</h1>
+  <a class="btn primary" href="#cleaning-queue">Open tasks</a>
+</div>
+
+<section class="card"><h2>Open cleaning work</h2>
+<form method="get" action="/cleaning" class="form-row"><label>Property <select name="property_id"><option value="">All properties</option>{% for p in properties|default([]) %}<option value="{{ p.id }}"{% if selected_property_id==p.id %} selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label><input type="hidden" name="view" value="{{ queue_view|default('open') }}"><button class="btn">Filter property</button><a href="/cleaning">Reset filters</a></form>
+{% if queue_counts is defined %}<nav class="section-nav" aria-label="Open cleaning filters">{% for value,label in [('open','All open'),('unassigned','Unassigned'),('overdue','Overdue')] %}<a href="/cleaning?property_id={{ selected_property_id or '' }}&amp;view={{ value }}"{% if queue_view==value %} aria-current="page"{% endif %}>{{ label }} ({{ queue_counts[value] }})</a>{% endfor %}</nav>{% endif %}
+{% if timezone_unknown_count|default(0) %}<p class="tag tag-warn">{{ timezone_unknown_count }} open task(s) have an invalid property timezone; overdue status is unknown. <a href="/properties">Review property settings</a>.</p>{% endif %}
+</section>
+
+<section id="cleaning-queue" aria-label="Cleaning tasks">
 {% if tasks|length == 0 %}
 <div class="empty-state">
   <p>No open cleaning tasks match this selection. <a href="/cleaning">Reset filters</a> or <a href="/operations/setup">check calendar connections</a>.</p>
 </div>
 {% else %}
 <div class="table-wrap">
-<table class="table">
+<table data-mobile-list class="table cleaning-task-list">
   <thead>
     <tr>
       <th>Property</th>
@@ -78,7 +84,7 @@
       <th>Assignee</th>
       <th>Status</th>
       <th>Quality</th>
-      <th></th>
+      <th>Actions</th>
     </tr>
   </thead>
   <tbody>
@@ -96,15 +102,15 @@
         <p>{{ (assignment_labels|default({})).get(t.id, (t.cleaner.name if t.cleaner else t.assignee) or 'Unassigned') }}</p>
         <form method="post" action="/cleaning/{{ t.id }}/assign" class="inline-form">
           <input type="hidden" name="queue_property_id" value="{{ selected_property_id|default('') or '' }}"><input type="hidden" name="queue_view" value="{{ queue_view|default('open') }}">
-          <select name="cleaner_id" style="width:120px">
+          <select name="cleaner_id" aria-label="Cleaner for task #{{ t.id }}" style="width:120px">
             <option value="">— free text —</option>
             {% for c in cleaners %}
             <option value="{{ c.id }}" {% if t.cleaner_id == c.id %}selected{% endif %}>{{ c.name }}</option>
             {% endfor %}
             {% if t.cleaner_id and t.cleaner_id not in (cleaners|map(attribute='id')|list) %}<option value="{{ t.cleaner_id }}" selected>{{ (assignment_labels|default({})).get(t.id, 'Existing cleaner') }}</option>{% endif %}
           </select>
-          <input type="text" name="assignee" placeholder="or type a name" value="{{ t.assignee or '' }}" style="width:100px" />
-          <button class="btn tiny" type="submit">save</button>
+          <input type="text" name="assignee" aria-label="Assignee name for task #{{ t.id }}" placeholder="or type a name" value="{{ t.assignee or '' }}" style="width:100px" />
+          <button class="btn tiny" type="submit">Save assignment</button>
         </form>
       </td>
       <td><span class="tag {{ 'tag-ok' if t.status.value == 'assigned' else 'tag-warn' }}">{{ t.status.value }}</span></td>
@@ -130,13 +136,13 @@
 {% if done_tasks %}
 <h2 style="margin-top:24px">Recently completed{% if selected_property_id|default(none) %} · selected property{% endif %}</h2>
 <div class="table-wrap">
-<table class="table small">
+<table data-mobile-list class="table small cleaning-task-list">
   <thead>
     <tr>
       <th>Property</th>
       <th>Checkout</th>
       <th>Assignee</th>
-      <th></th>
+      <th>Actions</th>
     </tr>
   </thead>
   <tbody>
@@ -158,4 +164,58 @@
 </div>
 {% endif %}
 
+</section>
+<details class="card"><summary>Manage cleaners</summary>
+  <div class="table-wrap">
+  <table class="table small">
+    <thead><tr><th>Name</th><th>Pay</th><th>Portal link</th></tr></thead>
+    <tbody>
+      {% for c in cleaners %}
+      <tr>
+        <td>{{ c.name }}</td>
+        <td>{{ c.pay_type or '—' }}{% if c.pay_rate is not none %} · ${{ c.pay_rate }}{% endif %}</td>
+        <td><a href="/cleaner/{{ c.portal_token }}" target="_blank">/cleaner/{{ c.portal_token }}</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="muted">No cleaners added yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <form method="post" action="/cleaners" class="form-row" style="margin-top:12px">
+    <input type="text" name="name" placeholder="Cleaner name" required />
+    <input type="text" name="phone" placeholder="Phone (optional)" />
+    <select name="pay_type">
+      <option value="">Pay type</option>
+      <option value="per_clean">Per clean</option>
+      <option value="hourly">Hourly</option>
+    </select>
+    <input type="number" step="0.01" name="pay_rate" placeholder="Rate $" style="width:110px" />
+    <button class="btn" type="submit">Add cleaner</button>
+  </form>
+</details>
+
+
+{% if linen_rows %}
+<details class="card"><summary>Linen needed (upcoming)</summary>
+  <div class="table-wrap">
+  <table class="table small">
+    <thead><tr><th>Date</th><th>Sets needed</th></tr></thead>
+    <tbody>
+      {% for day, count in linen_rows %}
+      <tr><td>{{ day.strftime('%Y-%m-%d') }}</td><td>{{ count }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted">Estimated from each property's bedroom count on checkout day.</p>
+</details>
+{% endif %}
+
+
+<details class="card"><summary>Calendar sync tools</summary><p>Sync may update reservations and cleaning work. It is separate from completing the current task.</p>
+  <form method="post" action="/sync">
+    <button class="btn primary" type="submit">Sync now</button>
+  </form>
+</details>
 {% endblock %}

@@ -853,7 +853,7 @@ def cleaning_page(request: Request, property_id: str = '', view: str = 'open'):
 
 @app.post("/cleaning/{task_id}/assign")
 def assign_cleaning_task(task_id: int, assignee: str = Form(""), cleaner_id: str = Form(""),
-                         queue_property_id: str = Form(''), queue_view: str = Form('open')):
+                         queue_property_id: str = Form(''), queue_view: str = Form('open'), request: Request = None):
     db = SessionLocal()
     try:
         task = db.get(CleaningTask, task_id)
@@ -874,6 +874,17 @@ def assign_cleaning_task(task_id: int, assignee: str = Form(""), cleaner_id: str
             if task.status != CleaningStatus.done:
                 task.status = CleaningStatus.assigned if (assignee or cleaner_id) else CleaningStatus.pending
             db.commit()
+    except HTTPException as exc:
+        db.rollback()
+        from app.operations.parity_router import browser_form, form_error
+        from app.operations.cleaning_queue import queue_return_url
+        from urllib.parse import urlsplit, parse_qs
+        if request and browser_form(request) and exc.status_code in (409,422):
+            target=queue_return_url(queue_property_id,queue_view)
+            filters=parse_qs(urlsplit(target).query)
+            page=cleaning_page(request,property_id=filters.get('property_id',[''])[0],view=filters.get('view',['open'])[0])
+            return form_error(request,page,exc.detail)
+        raise
     finally:
         db.close()
     from app.operations.cleaning_queue import queue_return_url

@@ -1,26 +1,27 @@
 {% extends "base.html" %}
 {% block title %}Reservations — Omi Holiday{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Reservations</h1></div>
+{% if form_error %}<section class="card" role="alert" id="form-error"><h2>Review before saving again</h2><p>{{ form_error }}</p><p>Check the recorded status before submitting again. Notes, contact details and external references are not copied; re-enter them if needed.</p></section>{% endif %}
+<div class="page-head"><h1>Reservations</h1><a class="btn primary" href="#create-reservation">Create reservation</a></div>
 <p>Create direct reservations and review channel imports. Dates refer to property-local nights; check-out does not reserve the departing night.</p>
-<section class="card"><h2>Reservation list</h2><form class="form-row" method="get">
+<section class="card"><h2>Reservation list</h2><details class="reservation-filters"><summary>Filter reservations{% if q or property_id or status != "confirmed" or channel or start or end %} · filters active{% endif %}</summary><form class="form-row" method="get" action="/operations/reservations">
 <label>Search <input name="q" maxlength="120" value="{{ q }}" placeholder="Reservation ID, guest, email or source reference"></label>
 <label>Property <select name="property_id"><option value="">All properties</option>{% for p in properties %}<option value="{{ p.id }}" {% if p.id == property_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label>
 <label>Status <select name="status">{% for s in ['confirmed','cancelled','all'] %}<option value="{{ s }}" {% if s == status %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label>
 <label>Booking source <select name="channel"><option value="">All sources</option>{% for source in channels %}<option value="{{ source }}" {% if source == channel %}selected{% endif %}>{{ source }}</option>{% endfor %}</select></label>
 <label>First night <input name="start" type="date" value="{{ start }}"></label><label>End date (excluded) <input name="end" type="date" value="{{ end }}"></label>
 <button class="btn">Filter</button><a href="/operations/reservations">Reset filters</a></form>
-<p class="muted">Search matches guest details or the source reference, plus an exact numeric reservation ID. Date filters show stays overlapping the selected nights, excluding the checkout night.</p>
+<p class="muted">Search matches guest details or the source reference, plus an exact numeric reservation ID. Date filters show stays overlapping the selected nights, excluding the checkout night.</p></details>
 <div class="table-wrap"><table data-mobile-list class="table small"><thead><tr><th>ID</th><th>Property</th><th>Channel</th><th>Dates</th><th>Guest</th><th>Amount</th><th>Status</th></tr></thead><tbody>
-{% for b in rows %}<tr><td><a href="/operations/reservations/{{ b.id }}">#{{ b.id }}</a></td><td>{{ b.property.name }}</td><td>{{ b.platform.value }}</td><td>{{ b.check_in.date() }} → {{ b.check_out.date() }}</td><td>{{ b.guest.name or '—' if b.guest else '—' }}</td><td>{{ b.amount if b.amount is not none else 'Unknown' }}</td><td>{{ b.status.value }}{% if b.has_conflict %} · Conflict{% endif %}{% if b.source_missing_since %} · Source needs review{% endif %}</td></tr>
+{% for b in rows %}<tr><td><a href="/operations/reservations/{{ b.id }}{{ list_return_query|default('') }}">#{{ b.id }}</a></td><td>{{ b.property.name }}</td><td>{{ b.platform.value }}</td><td>{{ b.check_in.date() }} → {{ b.check_out.date() }}</td><td>{{ b.guest.name or '—' if b.guest else '—' }}</td><td>{{ b.amount if b.amount is not none else 'Unknown' }}</td><td>{{ b.status.value }}{% if b.has_conflict %} · Conflict{% endif %}{% if b.source_missing_since %} · Source needs review{% endif %}</td></tr>
 {% else %}<tr><td colspan="7">No reservations in this selection. <a href="/operations/setup">Check calendar connections</a>.</td></tr>{% endfor %}</tbody></table></div>
 <nav aria-label="Reservation pages"><span>Page {{ page }} · up to 200 reservations per page</span>{% if previous_url %} · <a href="{{ previous_url }}">Previous page</a>{% endif %}{% if next_url %} · <a href="{{ next_url }}">Next page</a>{% endif %}</nav>
 {% if truncated and not next_url %}<p>Narrow the filters to see additional results.</p>{% endif %}</section>
 <section class="card" id="create-reservation"><h2>Create a direct reservation</h2>
 <p>Local inventory is checked before saving. This does not reserve nights on an OTA or collect payment. Guest messages remain paused.</p>
-{% if draft_booking %}<p>Property and dates carried from the calendar. Review them before saving; no reservation has been created.</p>{% endif %}
+{% if draft_booking %}<p>{% if form_error %}Your selected dates are retained for review. Check the list before submitting again.{% else %}Property and dates carried from the calendar. Review them before saving; no reservation has been created.{% endif %}</p>{% endif %}
 <form method="post" action="/operations/reservations/0" class="form-row">
-<input type="hidden" name="token" value="{{ token }}">
+<input type="hidden" name="token" value="{{ token }}"><input type="hidden" name="return_to" value="{{ reservation_return|default('/operations/reservations') }}">
 <label>Property <select name="property_id" required>{% for p in properties %}<option value="{{ p.id }}"{% if p.id == property_id %} selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label>
 {% set booking = draft_booking|default(none) %}{% include "reservation_fields.html" %}<button class="btn primary" {% if not properties %}disabled{% endif %}>Create reservation</button></form></section>
 {% endblock %}

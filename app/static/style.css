@@ -506,3 +506,16 @@ details>summary+* { margin-top:10px; }
   .table-wrap { overflow:visible; }
   .table-wrap::before { display:none !important; }
 }
+
+/* Mobile work queues: visible tasks, full-size controls, no sideways action hunt. */
+@media(max-width:640px) {
+  summary,.section-nav a { min-height:44px; }
+  .ops-shell>main>p>a:only-child,.card>p>a:only-child,.card details>a { display:inline-flex; align-items:center; min-height:44px; max-width:100%; padding:8px 0; }
+  .mobile-list td>a { display:inline-flex; align-items:center; min-height:44px; min-width:44px; }
+  .cleaning-task-list td { display:block; }
+  .cleaning-task-list td::before { display:block; margin-bottom:6px; }
+  .cleaning-task-list .inline-form { display:flex; flex-direction:column; align-items:stretch; }
+  .cleaning-task-list .inline-form input,.cleaning-task-list .inline-form select { width:100% !important; max-width:100%; }
+  .cleaning-task-list form .btn { width:100%; }
+  #cleaning-queue,#create-reservation,input,select,textarea { scroll-margin-block:6rem; }
+}
