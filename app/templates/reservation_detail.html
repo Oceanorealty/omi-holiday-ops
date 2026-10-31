@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Reservation #{{ booking.id }} — Omi Holiday{% endblock %}
 {% block content %}
-<p><a href="/operations/reservations">← Reservations</a></p>
+{% set form_values=form_values|default({}) %}
+{% if form_error %}<section class="card" role="alert" id="form-error"><h2>Review before saving again</h2><p>{{ form_error }}</p><p>Check the recorded status before submitting again. Notes, contact details and external references are not copied; re-enter them if needed.</p></section>{% endif %}
+<p><a href="{{ reservation_return|default('/operations/reservations') }}">← Reservations</a></p>
 <p><a href="/operations/custom-fields/reservation/{{ booking.id }}">Custom fields</a></p>
 <div class="page-head"><h1>Reservation #{{ booking.id }}</h1></div>
 <section class="card" aria-labelledby="stay-summary"><h2 id="stay-summary">Stay summary</h2>
@@ -25,19 +27,19 @@
 {% for warning in stay_warnings %}<p role="status"><strong>{{ warning }}</strong></p>{% endfor %}
 {% if booking.status.value == 'confirmed' and stay.status != 'departed' %}
 <form method="post" action="/operations/reservations/{{ booking.id }}/attendance" class="form-row">
-<input type="hidden" name="token" value="{{ stay_token }}"><input type="hidden" name="action" value="{{ 'arrive' if stay.status == 'not_recorded' else 'depart' }}">
-<label>{{ 'Actual arrival' if stay.status == 'not_recorded' else 'Actual departure' }} (local time)<input type="datetime-local" name="{{ 'arrived_at' if stay.status == 'not_recorded' else 'departed_at' }}" required></label>
+<input type="hidden" name="token" value="{{ stay_token }}"><input type="hidden" name="return_to" value="{{ reservation_return|default('/operations/reservations') }}"><input type="hidden" name="action" value="{{ 'arrive' if stay.status == 'not_recorded' else 'depart' }}">
+<label>{{ 'Actual arrival' if stay.status == 'not_recorded' else 'Actual departure' }} (local time)<input type="datetime-local" name="{{ 'arrived_at' if stay.status == 'not_recorded' else 'departed_at' }}" value="{{ form_values.get('arrived_at','') if stay.status == 'not_recorded' else form_values.get('departed_at','') }}" required></label>
 <label>Record note<textarea name="note" minlength="10" maxlength="960" required></textarea></label>
 <button class="btn primary">{{ 'Record check-in' if stay.status == 'not_recorded' else 'Record check-out' }}</button>
 </form>
-<details><summary>Record expected departure time</summary><p>Enter the agreed time explicitly. No default checkout hour or late fee is assumed.</p>
-<form method="post" action="/operations/reservations/{{ booking.id }}/attendance" class="form-row"><input type="hidden" name="token" value="{{ stay_token }}"><input type="hidden" name="action" value="plan_departure">
-<label>Expected departure (local time)<input type="datetime-local" name="expected_departure" required></label><label>Reason<textarea name="note" minlength="10" maxlength="960" required></textarea></label><button class="btn">Save expected time</button></form></details>
+<details{% if form_values.get('action') == 'plan_departure' %} open{% endif %}><summary>Record expected departure time</summary><p>Enter the agreed time explicitly. No default checkout hour or late fee is assumed.</p>
+<form method="post" action="/operations/reservations/{{ booking.id }}/attendance" class="form-row"><input type="hidden" name="token" value="{{ stay_token }}"><input type="hidden" name="return_to" value="{{ reservation_return|default('/operations/reservations') }}"><input type="hidden" name="action" value="plan_departure">
+<label>Expected departure (local time)<input type="datetime-local" name="expected_departure" value="{{ form_values.get('expected_departure','') }}" required></label><label>Reason<textarea name="note" minlength="10" maxlength="960" required></textarea></label><button class="btn">Save expected time</button></form></details>
 {% endif %}
-<details><summary>Correct an attendance record</summary><p>The previous record remains in history. This changes attendance only.</p>
-<form method="post" action="/operations/reservations/{{ booking.id }}/attendance" class="form-row"><input type="hidden" name="token" value="{{ stay_token }}"><input type="hidden" name="action" value="correct">
-<label>Correct state<select name="target_status"><option value="not_recorded" {% if stay.status == 'not_recorded' %}selected{% endif %}>Not recorded</option><option value="in_house" {% if stay.status == 'in_house' %}selected{% endif %}>Checked in</option><option value="departed" {% if stay.status == 'departed' %}selected{% endif %}>Checked out</option></select></label>
-<label>Actual arrival<input type="datetime-local" name="arrived_at" value="{{ stay.arrived_at }}"></label><label>Actual departure<input type="datetime-local" name="departed_at" value="{{ stay.departed_at }}"></label><label>Expected departure<input type="datetime-local" name="expected_departure" value="{{ stay.expected_departure }}"></label>
+<details{% if form_values.get('action') == 'correct' %} open{% endif %}><summary>Correct an attendance record</summary><p>The previous record remains in history. This changes attendance only.</p>
+<form method="post" action="/operations/reservations/{{ booking.id }}/attendance" class="form-row"><input type="hidden" name="token" value="{{ stay_token }}"><input type="hidden" name="return_to" value="{{ reservation_return|default('/operations/reservations') }}"><input type="hidden" name="action" value="correct">
+<label>Correct state<select name="target_status" aria-label="Correct state"><option value="not_recorded" {% if form_values.get('target_status',stay.status) == 'not_recorded' %}selected{% endif %}>Not recorded</option><option value="in_house" {% if form_values.get('target_status',stay.status) == 'in_house' %}selected{% endif %}>Checked in</option><option value="departed" {% if form_values.get('target_status',stay.status) == 'departed' %}selected{% endif %}>Checked out</option></select></label>
+<label>Actual arrival<input type="datetime-local" name="arrived_at" value="{{ form_values.get('arrived_at',stay.arrived_at) }}"></label><label>Actual departure<input type="datetime-local" name="departed_at" value="{{ form_values.get('departed_at',stay.departed_at) }}"></label><label>Expected departure<input type="datetime-local" name="expected_departure" value="{{ form_values.get('expected_departure',stay.expected_departure) }}"></label>
 <label>Correction reason<textarea name="note" minlength="10" maxlength="960" required></textarea></label><button class="btn">Save correction with history</button></form></details>
 <details><summary>What this records</summary><p>Internal attendance only. It does not change booked nights, prices, payment, channel availability, locks or cleaning assignments. Review cleaning separately. Other listing identities may share a physical unit; that mapping is not verified here.</p></details>
 </section>
@@ -49,11 +51,11 @@
 <p>{{ booking.property.name }} · {{ booking.platform.value }} · {{ booking.status.value }}</p>
 {% if editable %}
 {% if booking.status.value == 'confirmed' %}<section class="card"><h2>Update dates and guest details</h2>
-<form method="post" class="form-row"><input type="hidden" name="token" value="{{ token }}"><input type="hidden" name="property_id" value="{{ booking.property_id }}">
-{% include "reservation_fields.html" %}<button class="btn primary">Save changes</button></form></section>{% endif %}
+<form method="post" action="/operations/reservations/{{ booking.id }}" class="form-row"><input type="hidden" name="token" value="{{ token }}"><input type="hidden" name="return_to" value="{{ reservation_return|default('/operations/reservations') }}"><input type="hidden" name="property_id" value="{{ booking.property_id }}">
+{% with booking=edit_form_booking|default(booking) %}{% include "reservation_fields.html" %}{% endwith %}<button class="btn primary">Save changes</button></form></section>{% endif %}
 <section class="card"><h2>{{ 'Cancel reservation' if booking.status.value == 'confirmed' else 'Restore reservation' }}</h2>
 <p>Cancellation retains the reservation and history. Restoration checks current dates and stay restrictions. No refund or channel update is performed.</p>
-<form method="post" class="form-row"><input type="hidden" name="token" value="{{ token }}"><input type="hidden" name="property_id" value="{{ booking.property_id }}"><input type="hidden" name="action" value="{{ 'cancel' if booking.status.value == 'confirmed' else 'restore' }}">
+<form method="post" action="/operations/reservations/{{ booking.id }}" class="form-row"><input type="hidden" name="token" value="{{ token }}"><input type="hidden" name="return_to" value="{{ reservation_return|default('/operations/reservations') }}"><input type="hidden" name="property_id" value="{{ booking.property_id }}"><input type="hidden" name="action" value="{{ 'cancel' if booking.status.value == 'confirmed' else 'restore' }}">
 <label>Reason <textarea name="note" minlength="10" maxlength="1000" required></textarea></label><button class="btn">{{ 'Cancel reservation' if booking.status.value == 'confirmed' else 'Restore reservation' }}</button></form></section>
 {% else %}<section class="card"><h2>Channel reservation</h2><p>{{ booking.check_in }} → {{ booking.check_out }}</p><p>Manage dates and cancellations at the original channel. Source sync controls this reservation.</p></section>{% endif %}
 <section class="card"><h2>Recorded changes</h2>{% for e in events %}<p><strong>{{ e.action }}</strong> · {{ e.actor }} · {{ e.created_at }} UTC<br>{{ e.note }}</p>{% else %}<p>No local reservation changes recorded.</p>{% endfor %}</section>
