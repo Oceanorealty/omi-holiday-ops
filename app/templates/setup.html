@@ -2,20 +2,21 @@
 {% block title %}Setup — Omi Holiday{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Operations setup</h1></div>
-<p>Check data connections before relying on an empty calendar or a zero review count.</p>
+<p>Use the normal reservation, calendar, cleaning and finance pages for internal testing. Before real operation, complete the recorded gaps below. An empty calendar does not confirm live availability.</p>
 <section class="card"><h2>Team</h2>
 <p>{{ staff_count }} active named staff · {{ cleaner_count }} active cleaners.</p>
 {% if not staff_count %}<p class="tag tag-warn">No named staff are available for task assignment.</p>{% endif %}
 <p><a href="/staff">Manage staff logins</a> · <a href="/cleaning">Manage cleaners</a></p></section>
 <section class="card"><h2>Property readiness</h2><div class="table-wrap"><table class="table small">
-<thead><tr><th>Property</th><th>Calendar source</th><th>Timezone</th><th>Commission</th><th>Guest instructions</th></tr></thead>
+<thead><tr><th>Property</th><th>Live calendar source</th><th>Timezone</th><th>Recorded information</th><th>Next action</th></tr></thead>
 <tbody>{% for row in rows %}<tr>
-<td>{{ row.property.name }}</td>
-<td>{% if not row.feed_count %}Not connected{% else %}{{ row.synced }}/{{ row.feed_count }} synced without a reported error{% if row.errors %} · {{ row.errors }} need review{% endif %}{% endif %}</td>
-<td>{{ row.property.time_zone }}{% if row.property.time_zone == 'UTC' %} — verify property-local timezone{% endif %}</td>
-<td>{{ 'Configured' if row.commission_ready else 'Missing' }}</td>
-<td>{{ 'Configured' if row.guest_info_ready else 'Incomplete' }}</td></tr>
+<td><a href="/properties?property_id={{ row.property.id }}">{{ row.property.name }}</a></td>
+<td>{% if not row.feed_count %}Not connected — live availability unknown{% else %}{{ row.synced }}/{{ row.feed_count }} previously synced without a reported error{% if row.errors %} · {{ row.errors }} need review{% endif %}{% endif %}</td>
+<td>{{ row.property.time_zone }}{% if not row.zone_valid %} — invalid timezone{% elif row.property.time_zone == 'UTC' %} — verify property-local timezone{% endif %}</td>
+<td>{{ row.recorded }}/{{ row.total }} checks recorded · <a href="/operations/properties/{{ row.property.id }}/photos">{{ row.photo_count }} active photos</a></td>
+<td>{% if row.missing %}<details><summary>{{ row.missing|length }} fields to complete</summary><ul>{% for field in row.missing %}<li>{{ field }}</li>{% endfor %}</ul><a href="/properties?property_id={{ row.property.id }}">Complete this property's details</a></details>{% else %}Checked fields recorded{% endif %}</td></tr>
 {% else %}<tr><td colspan="5">Add a property to begin.</td></tr>{% endfor %}</tbody></table></div>
 <p><a href="/properties">Configure properties and calendar feeds</a></p>
+<p>Recorded fields are not proof of source accuracy or approval to launch. Use verified owner/platform records; leave unknown facts blank. These checks do not send messages, dispatch cleaners, connect calendars, publish listings or collect payments.</p>
 <p>iCal connects calendar dates. It does not provide real-time rate publishing or a guest inbox. A successful past sync does not prove a source is current.</p></section>
 {% endblock %}

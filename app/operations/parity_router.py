@@ -2,22 +2,23 @@
 import csv
 import io
 from datetime import date, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 from app.db import get_db
 from app.models import (Booking, BookingStatus, Cleaner, Guest, PlatformName, IcalFeed, InventoryEvent,
-                        Property, ReservationEvent, StaffUser)
+                        Property, PropertyPhoto, ReservationEvent, StaffUser, CleaningTask, BookingAccount)
 from app.operations.calendar import calendar_data
 from app.operations.inventory import inventory_rows, inventory_token, save_inventory
 from app.operations.reservations import reservation_token, save_reservation
 from app.operations.router import require_admin, templates
 from app.operations.tasks import TaskError
 from app.operations.pricing_limits import limits_token, save_limits
+from app.operations.billing import entries as account_entries, totals as account_totals
 from app.models import PricingLimit
 
 router = APIRouter()
@@ -46,22 +47,65 @@ def optional_property(value):
         raise HTTPException(422, 'Invalid property') from None
 
 
+def property_readiness(prop, photo_count, cleaner_names):
+    """Presence/validity checks only, never certify source accuracy or activate services."""
+    def present(value):
+        return bool(value and str(value).strip())
+
+    def number(value, minimum, maximum=None):
+        try:
+            value = Decimal(str(value))
+            return value.is_finite() and value >= minimum and (maximum is None or value <= maximum)
+        except (InvalidOperation, ValueError, TypeError):
+            return False
+
+    try:
+        ZoneInfo(prop.time_zone)
+        zone_valid = True
+    except (ValueError, TypeError, KeyError):
+        zone_valid = False
+    checks = [
+        ('Address / unit reference', present(prop.address)),
+        ('Description', present(prop.description)),
+        ('Bedroom count', number(prop.bedrooms, 0)),
+        ('Bathroom count', number(prop.bathrooms, 1)),
+        ('Guest capacity', number(prop.max_guests, 1)),
+        ('Cover photo', present(prop.photo_url)),
+        ('Active photo gallery', photo_count > 0),
+        ('Property timezone', zone_valid),
+        ('Commission from owner agreement', number(prop.commission_pct, 0, 100)),
+        ('Base nightly rate for direct quotes', number(prop.base_nightly_rate, Decimal('0.01'))),
+        ('Arrival instructions', present(prop.check_in_instructions)),
+        ('House rules', present(prop.house_rules)),
+        ('Wi-Fi information', present(prop.wifi_info)),
+        ('Active default cleaner', prop.default_cleaner in cleaner_names),
+    ]
+    return {'missing': [label for label, valid in checks if not valid],
+            'recorded': sum(valid for _, valid in checks), 'total': len(checks),
+            'photo_count': photo_count, 'zone_valid': zone_valid,
+            'commission_ready': checks[8][1],
+            'guest_info_ready': all(present(value) for value in
+                (prop.check_in_instructions, prop.house_rules, prop.wifi_info))}
+
+
 @router.get('/operations/setup')
 def setup(request: Request, db=Depends(get_db), admin=Depends(require_admin)):
     properties = db.query(Property).order_by(Property.name).all()
     feeds = db.query(IcalFeed).filter_by(active=True).all()
     staff = db.query(StaffUser).filter_by(active=True).count()
-    cleaners = db.query(Cleaner).filter_by(active=True).count()
+    active_cleaners = db.query(Cleaner).filter_by(active=True).all()
+    cleaner_names = {cleaner.name for cleaner in active_cleaners}
+    photo_counts = dict(db.query(PropertyPhoto.property_id, func.count(PropertyPhoto.id))
+        .filter(PropertyPhoto.active.is_(True)).group_by(PropertyPhoto.property_id).all())
     rows = []
     for prop in properties:
         sources = [f for f in feeds if f.property_id == prop.id]
         rows.append({'property': prop, 'feed_count': len(sources),
             'synced': sum(bool(f.last_synced_at and not f.last_sync_error) for f in sources),
             'errors': sum(bool(f.last_sync_error) for f in sources),
-            'commission_ready': prop.commission_pct is not None,
-            'guest_info_ready': bool(prop.check_in_instructions and prop.house_rules)})
+            **property_readiness(prop, photo_counts.get(prop.id, 0), cleaner_names)})
     return templates.TemplateResponse(request=request, name='setup.html', context={
-        'rows': rows, 'staff_count': staff, 'cleaner_count': cleaners})
+        'rows': rows, 'staff_count': staff, 'cleaner_count': len(active_cleaners)})
 
 
 @router.get('/operations/reservations')
@@ -120,8 +164,25 @@ def reservation_detail(entity_id: int, request: Request, db=Depends(get_db), adm
     if not row or row.is_block:
         raise HTTPException(404, 'Reservation not found')
     editable = row.platform.value == 'direct' and row.source_feed_id is None
+    first, last = row.check_in.date(), row.check_out.date()
+    nights = (last - first).days
+    calendar_end = min(max(last, first + timedelta(days=1)), first + timedelta(days=62))
+    account = db.get(BookingAccount, entity_id)
+    account_summary = None
+    account_needs_review = False
+    if account:
+        try:
+            account_summary = account_totals(account_entries(db, entity_id))
+        except TaskError:
+            account_needs_review = True
     return templates.TemplateResponse(request=request, name='reservation_detail.html', context={
         'booking': row, 'editable': editable, 'token': reservation_token(admin, row),
+        'stay_nights': nights if nights > 0 else None,
+        'stay_calendar_url': '/operations/calendar?' + urlencode(dict(property_id=row.property_id,
+            start=first.isoformat(), end=calendar_end.isoformat())),
+        'calendar_clipped': nights > 62,
+        'cleaning_task': db.query(CleaningTask).filter_by(booking_id=entity_id).first(),
+        'account': account, 'account_summary': account_summary, 'account_needs_review': account_needs_review,
         'events': db.query(ReservationEvent).filter_by(booking_id=entity_id).order_by(ReservationEvent.id.desc()).limit(100).all()})
 
 
