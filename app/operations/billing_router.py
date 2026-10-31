@@ -16,6 +16,17 @@ from app.operations.tasks import TaskError
 router=APIRouter()
 
 
+@router.get('/operations/accounts/{booking_id}/owner-reconciliation')
+def owner_reconciliation_page(booking_id:int,request:Request,db=Depends(get_db),admin=Depends(require_admin)):
+    from app.operations.owner_reconciliation import reconciliation
+    booking=db.get(Booking,booking_id)
+    if not booking or booking.is_block:raise HTTPException(404,'Guest reservation not found')
+    try:data=reconciliation(db,booking)
+    except TaskError as exc:raise HTTPException(409,str(exc),headers={'Cache-Control':'private, no-store'}) from None
+    return templates.TemplateResponse(request=request,name='owner_reconciliation.html',
+        context=data,headers={'Cache-Control':'private, no-store'})
+
+
 @router.get('/operations/accounts')
 def account_index(request:Request,booking_id:int|None=None,db=Depends(get_db),admin=Depends(require_admin)):
     if booking_id is not None:return RedirectResponse(f'/operations/accounts/{booking_id}',status_code=303)
