@@ -15,6 +15,33 @@
 {% if account_needs_review %}<p>Account history needs review; balance not displayed.</p>{% elif account_summary %}<p>{{ account_summary.state }} · Recorded balance {{ account.currency }} {{ account_summary.balance }}</p>{% else %}<p>Account not configured — balance unknown.</p>{% endif %}
 <p><a href="/operations/accounts/{{ booking.id }}">Review charges, receipts and balance</a></p>
 </section>
+
+<section class="card" id="attendance" aria-labelledby="attendance-title">
+<h2 id="attendance-title">Actual stay</h2>
+<p><strong>{{ {'not_recorded':'Not recorded — attendance unknown','in_house':'Checked in','departed':'Checked out'}[stay.status] }}</strong> · {{ booking.property.time_zone }}</p>
+{% if stay.arrived_at %}<p>Actual arrival: {{ stay.arrived_at|replace('T',' ') }}</p>{% endif %}
+{% if stay.departed_at %}<p>Actual departure: {{ stay.departed_at|replace('T',' ') }}</p>{% endif %}
+{% if stay.expected_departure %}<p>Recorded expected departure: {{ stay.expected_departure|replace('T',' ') }}</p>{% endif %}
+{% for warning in stay_warnings %}<p role="status"><strong>{{ warning }}</strong></p>{% endfor %}
+{% if booking.status.value == 'confirmed' and stay.status != 'departed' %}
+<form method="post" action="/operations/reservations/{{ booking.id }}/attendance" class="form-row">
+<input type="hidden" name="token" value="{{ stay_token }}"><input type="hidden" name="action" value="{{ 'arrive' if stay.status == 'not_recorded' else 'depart' }}">
+<label>{{ 'Actual arrival' if stay.status == 'not_recorded' else 'Actual departure' }} (local time)<input type="datetime-local" name="{{ 'arrived_at' if stay.status == 'not_recorded' else 'departed_at' }}" required></label>
+<label>Record note<textarea name="note" minlength="10" maxlength="960" required></textarea></label>
+<button class="btn primary">{{ 'Record check-in' if stay.status == 'not_recorded' else 'Record check-out' }}</button>
+</form>
+<details><summary>Record expected departure time</summary><p>Enter the agreed time explicitly. No default checkout hour or late fee is assumed.</p>
+<form method="post" action="/operations/reservations/{{ booking.id }}/attendance" class="form-row"><input type="hidden" name="token" value="{{ stay_token }}"><input type="hidden" name="action" value="plan_departure">
+<label>Expected departure (local time)<input type="datetime-local" name="expected_departure" required></label><label>Reason<textarea name="note" minlength="10" maxlength="960" required></textarea></label><button class="btn">Save expected time</button></form></details>
+{% endif %}
+<details><summary>Correct an attendance record</summary><p>The previous record remains in history. This changes attendance only.</p>
+<form method="post" action="/operations/reservations/{{ booking.id }}/attendance" class="form-row"><input type="hidden" name="token" value="{{ stay_token }}"><input type="hidden" name="action" value="correct">
+<label>Correct state<select name="target_status"><option value="not_recorded" {% if stay.status == 'not_recorded' %}selected{% endif %}>Not recorded</option><option value="in_house" {% if stay.status == 'in_house' %}selected{% endif %}>Checked in</option><option value="departed" {% if stay.status == 'departed' %}selected{% endif %}>Checked out</option></select></label>
+<label>Actual arrival<input type="datetime-local" name="arrived_at" value="{{ stay.arrived_at }}"></label><label>Actual departure<input type="datetime-local" name="departed_at" value="{{ stay.departed_at }}"></label><label>Expected departure<input type="datetime-local" name="expected_departure" value="{{ stay.expected_departure }}"></label>
+<label>Correction reason<textarea name="note" minlength="10" maxlength="960" required></textarea></label><button class="btn">Save correction with history</button></form></details>
+<details><summary>What this records</summary><p>Internal attendance only. It does not change booked nights, prices, payment, channel availability, locks or cleaning assignments. Review cleaning separately. Other listing identities may share a physical unit; that mapping is not verified here.</p></details>
+</section>
+
 <p><a href="/operations/inbox/{{ booking.id }}">Open portal conversation</a></p>
 <p><a href="/operations/agreements?booking_id={{ booking.id }}">Review or issue stay agreement</a></p>
 <p><a href="/operations/accounts/{{ booking.id }}">Charges, external receipts and balance</a></p>
