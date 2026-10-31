@@ -9,7 +9,7 @@ from app.operations.billing import (CURRENCIES,account_token,add_entry,create_ac
     entries,issue_statement,totals,void_entry)
 from app.operations.guest_checkin import find_guest_booking
 from app.operations.guest_access import clearance_token,account_is_clear
-from app.operations.parity_router import same_origin
+from app.operations.parity_router import same_origin, form_error, browser_form, safe_form_values
 from app.operations.router import require_admin,templates
 from app.operations.tasks import TaskError
 
@@ -51,12 +51,18 @@ def account_page(booking_id:int,request:Request,db=Depends(get_db),admin=Depends
         'statements':db.query(BookingAccountStatement).filter_by(booking_id=booking_id).order_by(BookingAccountStatement.id.desc()).limit(100).all()})
 
 
+def account_error(booking_id,request,db,admin,message,values=None):
+    return form_error(request,account_page(booking_id,request,db,admin),message,safe_form_values(values or {}))
+
+
 @router.post('/operations/accounts/{booking_id}/create')
 def account_create(booking_id:int,request:Request,token:str=Form(...),currency:str=Form(...),
                    opening_amount:str=Form(''),note:str=Form(...),db=Depends(get_db),admin=Depends(require_admin)):
     same_origin(request)
     try:create_account(db,actor=admin,booking_id=booking_id,token=token,currency=currency,opening_amount=opening_amount,note=note)
-    except TaskError as exc:raise HTTPException(409,str(exc)) from None
+    except TaskError as exc:
+        if browser_form(request):return account_error(booking_id,request,db,admin,str(exc),dict(currency=currency,opening_amount=opening_amount))
+        raise HTTPException(409,str(exc)) from None
     return RedirectResponse(f'/operations/accounts/{booking_id}',status_code=303)
 
 
@@ -67,7 +73,10 @@ def entry_create(booking_id:int,request:Request,token:str=Form(...),kind:str=For
     same_origin(request)
     try:add_entry(db,actor=admin,booking_id=booking_id,token=token,kind=kind,amount=amount,description=description,
         occurred_on=occurred_on,reference=reference,payment_id=int(payment_id) if payment_id else None,note=note)
-    except ValueError as exc:raise HTTPException(409,str(exc) if isinstance(exc,TaskError) else 'Invalid payment selection') from None
+    except ValueError as exc:
+        message=str(exc) if isinstance(exc,TaskError) else 'Invalid payment selection'
+        if browser_form(request):return account_error(booking_id,request,db,admin,message,dict(kind=kind,amount=amount,occurred_on=occurred_on,payment_id=payment_id))
+        raise HTTPException(409,message) from None
     return RedirectResponse(f'/operations/accounts/{booking_id}',status_code=303)
 
 
@@ -76,7 +85,9 @@ def entry_void(booking_id:int,entry_id:int,request:Request,token:str=Form(...),n
                db=Depends(get_db),admin=Depends(require_admin)):
     same_origin(request)
     try:void_entry(db,actor=admin,booking_id=booking_id,entry_id=entry_id,token=token,note=note)
-    except TaskError as exc:raise HTTPException(409,str(exc)) from None
+    except TaskError as exc:
+        if browser_form(request):return account_error(booking_id,request,db,admin,str(exc))
+        raise HTTPException(409,str(exc)) from None
     return RedirectResponse(f'/operations/accounts/{booking_id}',status_code=303)
 
 
@@ -85,7 +96,9 @@ def statement_issue(booking_id:int,request:Request,token:str=Form(...),note:str=
                     db=Depends(get_db),admin=Depends(require_admin)):
     same_origin(request)
     try:entity_id=issue_statement(db,actor=admin,booking_id=booking_id,token=token,note=note)
-    except TaskError as exc:raise HTTPException(409,str(exc)) from None
+    except TaskError as exc:
+        if browser_form(request):return account_error(booking_id,request,db,admin,str(exc))
+        raise HTTPException(409,str(exc)) from None
     return RedirectResponse(f'/operations/accounts/{booking_id}/statements/{entity_id}',status_code=303)
 
 

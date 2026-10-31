@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 from sqlalchemy import or_, func
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit, parse_qsl
 from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -25,6 +25,87 @@ from app.models import PricingLimit
 
 router = APIRouter()
 
+
+
+def reservation_return(value):
+    """Only the validated reservation-list filter space; never an arbitrary redirect."""
+    fallback = '/operations/reservations'
+    if not isinstance(value, str) or len(value) > 2048 or any(ord(c) < 32 for c in value):
+        return fallback
+    try:
+        parsed = urlsplit(value)
+        pairs = parse_qsl(parsed.query, keep_blank_values=True, max_num_fields=12)
+        allowed = {'property_id', 'status', 'q', 'channel', 'start', 'end', 'page'}
+        values = dict(pairs)
+        if any(any(ord(c)<32 for c in value) for _,value in pairs):return fallback
+        if parsed.scheme or parsed.netloc or parsed.fragment or parsed.path != fallback or len(values) != len(pairs) or set(values)-allowed:
+            return fallback
+        if len(values.get('q','')) > 120 or values.get('status','confirmed') not in ('confirmed','cancelled','all'):
+            return fallback
+        if values.get('channel') and values['channel'] not in {p.value for p in PlatformName}:
+            return fallback
+        for key in ('property_id','page'):
+            item = values.get(key,'')
+            if item and (not item.isascii() or not item.isdigit() or len(item)>18 or int(item)<1):
+                return fallback
+        if int(values.get('page') or 1)>500:
+            return fallback
+        for key in ('start','end'):
+            if values.get(key) and date.fromisoformat(values[key]).isoformat()!=values[key]:
+                return fallback
+        if values.get('start') and values.get('end') and values['start']>=values['end']:
+            return fallback
+        values={k:v for k,v in pairs if v and not (k=='status' and v=='confirmed') and not (k=='page' and v=='1')}
+        return fallback + ('?' + urlencode(values) if values else '')
+    except (ValueError,TypeError):
+        return fallback
+
+
+def return_suffix(value):
+    target=reservation_return(value)
+    return '?' + urlencode({'return_to':target}) if target!='/operations/reservations' else ''
+
+
+def form_error(request, response, message, values=None):
+    """Render known validation failures in-place; no replay, cookies or browser storage."""
+    context={**response.context,'form_error':message,'form_values':values or {}}
+    if response.template.name in ('reservations.html','reservation_detail.html') and values and 'check_in' in values:
+        try:
+            original=context.get('booking') or context.get('draft_booking')
+            draft=SimpleNamespace(check_in=datetime.fromisoformat(values['check_in']),
+                check_out=datetime.fromisoformat(values['check_out']),
+                amount=Decimal(values['amount']) if values.get('amount') else None,
+                guest=original.guest if original else None)
+            context['edit_form_booking' if context.get('booking') else 'draft_booking']=draft
+        except (ValueError,KeyError,InvalidOperation):
+            pass
+    return templates.TemplateResponse(request=request,name=response.template.name,context=context,
+        status_code=409,headers={'Cache-Control':'private, no-store','Referrer-Policy':'same-origin'})
+
+
+def browser_form(request):
+    return 'text/html' in request.headers.get('accept','').lower()
+
+
+def safe_form_values(values):
+    # Deliberately exclude free-text notes, guest/contact details, passwords and references.
+    import re
+    result={}
+    for key,value in values.items():
+        if not isinstance(value,str):continue
+        if key in ('check_in','check_out','arrived_at','departed_at','expected_departure','occurred_on'):
+            if re.fullmatch(r'[0-9T:-]{0,16}',value):result[key]=value
+        elif key in ('amount','opening_amount','payment_id'):
+            if re.fullmatch(r'[0-9.+-]{0,24}',value):result[key]=value
+        elif key=='currency' and value in ('AUD','NZD','USD','EUR','GBP','CAD','SGD','HKD','CNY'):
+            result[key]=value
+        elif key=='kind' and value in ('charge','credit','payment','refund'):
+            result[key]=value
+        elif key=='target_status' and value in ('not_recorded','in_house','departed'):
+            result[key]=value
+        elif key=='action' and value in ('arrive','depart','plan_departure','correct'):
+            result[key]=value
+    return result
 
 def same_origin(request):
     origin = request.headers.get('origin')
@@ -165,6 +246,8 @@ def reservation_list(request: Request, property_id: str = '', status: str = 'con
     return templates.TemplateResponse(request=request, name='reservations.html', context={
         'rows': rows[:200], 'truncated': len(rows) > 200, 'status': status, 'property_id': property_id,
         'draft_booking': draft_booking,
+        'list_return_query':return_suffix('/operations/reservations?' + urlencode({**filters,'page':page})),
+        'reservation_return':reservation_return('/operations/reservations?' + urlencode({**filters,'page':page})),
         **filters, 'page': page, 'channels': [p.value for p in PlatformName],
         'previous_url': '/operations/reservations?' + urlencode({**filters, 'page': page - 1}) if page > 1 else None,
         'next_url': '/operations/reservations?' + urlencode({**filters, 'page': page + 1}) if len(rows) > 200 and page < 500 else None,
@@ -172,7 +255,7 @@ def reservation_list(request: Request, property_id: str = '', status: str = 'con
 
 
 @router.get('/operations/reservations/{entity_id}')
-def reservation_detail(entity_id: int, request: Request, db=Depends(get_db), admin=Depends(require_admin)):
+def reservation_detail(entity_id: int, request: Request, db=Depends(get_db), admin=Depends(require_admin), return_to: str = ''):
     row = db.get(Booking, entity_id)
     if not row or row.is_block:
         raise HTTPException(404, 'Reservation not found')
@@ -191,6 +274,7 @@ def reservation_detail(entity_id: int, request: Request, db=Depends(get_db), adm
     return templates.TemplateResponse(request=request, name='reservation_detail.html', context={
         **stay_operations.context(db, row, admin),
         'booking': row, 'editable': editable, 'token': reservation_token(admin, row),
+        'reservation_return':reservation_return(return_to),
         'stay_nights': nights if nights > 0 else None,
         'stay_calendar_url': '/operations/calendar?' + urlencode(dict(property_id=row.property_id,
             start=first.isoformat(), end=calendar_end.isoformat())),
@@ -204,7 +288,7 @@ def reservation_detail(entity_id: int, request: Request, db=Depends(get_db), adm
 def reservation_save(entity_id: int, request: Request, token: str = Form(...), property_id: int = Form(...),
                      check_in: str = Form(''), check_out: str = Form(''), amount: str = Form(''),
                      guest_name: str = Form(''), guest_email: str = Form(''), note: str = Form(...),
-                     action: str = Form('save'), db=Depends(get_db), admin=Depends(require_admin)):
+                     action: str = Form('save'), return_to: str = Form(''), db=Depends(get_db), admin=Depends(require_admin)):
     same_origin(request)
     if entity_id < 0:
         raise HTTPException(422, 'Invalid reservation')
@@ -213,8 +297,17 @@ def reservation_save(entity_id: int, request: Request, token: str = Form(...), p
             check_in=check_in, check_out=check_out, amount=amount, guest_name=guest_name,
             guest_email=guest_email, note=note, action=action)
     except TaskError as exc:
+        if browser_form(request):
+            if entity_id:
+                page=reservation_detail(entity_id,request,db,admin,return_to=return_to)
+            else:
+                filters=dict(parse_qsl(urlsplit(reservation_return(return_to)).query))
+                filters['property_id']=str(property_id) if db.get(Property,property_id) else ''
+                if 'page' in filters:filters['page']=int(filters['page'])
+                page=reservation_list(request,db=db,admin=admin,**filters)
+            return form_error(request,page,str(exc),safe_form_values({'check_in':check_in,'check_out':check_out,'amount':amount}))
         raise HTTPException(409, str(exc)) from None
-    return RedirectResponse(f'/operations/reservations/{saved}', status_code=303)
+    return RedirectResponse(f'/operations/reservations/{saved}'+return_suffix(return_to), status_code=303)
 
 
 @router.get('/operations/inventory')
@@ -340,12 +433,16 @@ def report_csv(start: date, end: date, property_id: int = None, db=Depends(get_d
 def stay_record(entity_id: int, request: Request, token: str = Form(...), action: str = Form(...),
                 note: str = Form(...), arrived_at: str = Form(''), departed_at: str = Form(''),
                 expected_departure: str = Form(''), target_status: str = Form(''),
-                db=Depends(get_db), admin=Depends(require_admin)):
+                return_to: str = Form(''), db=Depends(get_db), admin=Depends(require_admin)):
     same_origin(request)
     try:
         stay_operations.record(db, actor=admin, booking_id=entity_id, submitted_token=token,
             action=action, note=note, arrived_at=arrived_at, departed_at=departed_at,
             expected_departure=expected_departure, target_status=target_status)
     except TaskError as exc:
+        if browser_form(request):
+            page=reservation_detail(entity_id,request,db,admin,return_to=return_to)
+            return form_error(request,page,str(exc),safe_form_values(dict(action=action,arrived_at=arrived_at,
+                departed_at=departed_at,expected_departure=expected_departure,target_status=target_status)))
         raise HTTPException(409, str(exc)) from None
-    return RedirectResponse('/operations/reservations/' + str(entity_id) + '#attendance', status_code=303)
+    return RedirectResponse('/operations/reservations/' + str(entity_id) + return_suffix(return_to) + '#attendance', status_code=303)
