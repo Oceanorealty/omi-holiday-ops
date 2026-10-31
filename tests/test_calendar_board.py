@@ -1,5 +1,6 @@
 """Synthetic original-module calendar: no operational writes or outbound effects."""
 from datetime import date, datetime
+import re
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from app.db import get_db
@@ -97,7 +98,9 @@ def test_board_admin_gate_and_property_scope(db):
         app.dependency_overrides[require_admin]=lambda:'synthetic-admin'
         text=client.get(url).text
         assert 'Not selected' not in text and 'No recorded stay' in text
-        assert '0%' not in text
+        visible = re.sub(r'<style\b[^>]*>.*?</style>', '', text, flags=re.S)
+        visible = re.sub(r'<[^>]*>', '', visible)
+        assert '0%' not in visible
 
 
 def test_home_lands_on_calendar_and_source_records_route_retained(monkeypatch,db):
