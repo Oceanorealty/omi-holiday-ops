@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block title %}Reconciliation #{{ booking.id }} — Omi Holiday{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Reservation #{{ booking.id }} · Owner reconciliation</h1><a href="/operations/accounts/{{ booking.id }}">Back to account</a></div>
+<p>{{ booking.property.name }} · {{ booking.status.value }} · Checkout {{ booking.check_out.date() }} · {{ booking.property.time_zone }}</p>
+<section class="card"><h2>Review required — no owner settlement calculated</h2>
+<p>Read-only evidence comparison. No transfer, statement publication or accounting adjustment is performed.</p>
+<details><summary>Why settlement is unavailable here</summary><ul>{% for reason in review_reasons %}<li>{{ reason }}</li>{% endfor %}</ul></details></section>
+<section class="card"><h2>Recorded guest account</h2>
+{% if ledger.summary %}
+<p><strong>{{ ledger.currency }} · Net receipts recorded: {{ ledger.summary.net_received }}</strong></p>
+<dl><dt>Charges recorded</dt><dd>{{ ledger.gross_charges }}</dd><dt>Credits / discounts recorded</dt><dd>{{ ledger.credits }}</dd><dt>Net charges</dt><dd>{{ ledger.summary.charges }}</dd><dt>Payments recorded</dt><dd>{{ ledger.summary.payments }}</dd><dt>Refunds recorded</dt><dd>{{ ledger.summary.refunds }}</dd><dt>Guest account balance</dt><dd>{{ ledger.summary.balance }}</dd></dl>
+<p>All amounts in {{ ledger.currency }}. These records do not verify external movement of funds or establish owner entitlement.</p>
+<details><summary>Transaction periods and source entries</summary>
+<div role="region" aria-label="Transaction periods — scrollable" tabindex="0" style="overflow-x:auto"><table><thead><tr><th>Transaction month</th><th>Net charges</th><th>Payments</th><th>Refunds</th><th>Net receipts</th></tr></thead><tbody>{% for p in ledger.periods %}<tr><td>{{ p.period }}</td><td>{{ p.charges }}</td><td>{{ p.payments }}</td><td>{{ p.refunds }}</td><td>{{ p.net_received }}</td></tr>{% else %}<tr><td colspan="5">No active account entries recorded.</td></tr>{% endfor %}</tbody></table></div>
+<p>Months use recorded transaction dates, not the owner statement’s checkout-month basis. Voided entries are excluded from totals.</p>
+{% for r in ledger.rows %}<p>#{{ r.id }} · {{ r.kind }} · {{ r.amount }} {{ ledger.currency }} · {{ r.occurred_on }}{% if r.id in ledger.summary.voided %} · VOIDED{% endif %}{% if r.voids_id %} · corrects #{{ r.voids_id }}{% endif %}{% if r.payment_id %} · payment #{{ r.payment_id }}{% endif %}<br>{{ r.description }}{% if r.receipt_snapshot %} · <a href="/operations/accounts/{{ booking.id }}/receipts/{{ r.id }}">Receipt record</a>{% endif %}</p>{% endfor %}
+</details>
+{% else %}<p>{{ ledger.issue }}</p><p>Net receipts and balance: unknown.</p>{% endif %}
+</section>
+<section class="card"><h2>Reservation and existing owner basis</h2>
+<p>Current reservation amount: <strong>{{ booking.amount if booking.amount is not none else 'Unknown' }}</strong> · currency not stored.</p>
+<p>First local creation record amount: {{ original_local_amount if original_local_amount is not none else 'Unknown / no usable local creation record' }}. This is not an original channel invoice.</p>
+<p>Current legacy inclusion: {{ 'included, if the amount is supplied' if current_legacy_included else 'excluded' }} in checkout month {{ checkout_period }}. This describes the current calculation, not historical snapshot membership.</p>
+<p>Difference from guest account / owner entitlement: <strong>Not determined</strong> — currencies and settlement rules need confirmation.</p>
+{% if owner_statement %}
+<details><summary>Existing owner statement #{{ owner_statement.id }} · {{ 'FINALIZED — retained' if owner_statement.finalized else 'stored draft' }}</summary>
+<p>{{ owner_statement.period }} · Generated {{ owner_statement.generated_at }} UTC</p>
+<dl><dt>Stored aggregate gross</dt><dd>{{ owner_statement.gross_revenue }}</dd><dt>Stored expenses</dt><dd>{{ owner_statement.total_expenses }}</dd><dt>Stored commission</dt><dd>{{ owner_statement.commission_amount }}</dd><dt>Stored adjustment</dt><dd>{{ owner_statement.adjustment_amount }}</dd><dt>Stored calculated payout</dt><dd>{{ owner_statement.net_payout }} — not proof of payment or approved entitlement</dd></dl>
+<p>The legacy owner screen labels amounts AUD, but the statement has no currency field. No currency conversion or per-reservation historical allocation is inferred here. {% if owner_statement.finalized %}The frozen aggregate remains unchanged.{% else %}This page has not refreshed this draft.{% endif %}</p></details>
+{% else %}<p>No owner statement recorded for this checkout month.</p>{% endif %}
+</section>
+<section class="card"><h2>Guest account snapshots</h2>
+{% for s in snapshots %}<details><summary>OPS-S-{{ '%08d'|format(s.id) }} · {{ s.created_at }} UTC · {{ 'integrity checked' if s.valid else 'needs integrity review' }}</summary>
+{% if s.valid %}<p>{{ s.currency }} · Frozen net receipts {{ s.totals.net_received }} · Frozen net charges {{ s.totals.charges }} · Frozen balance {{ s.totals.balance }}</p>
+<p>Current minus frozen net receipts: {{ s.received_change if s.received_change is not none else 'Unknown / currencies not comparable' }}{% if s.received_change is not none %} {{ s.currency }}{% endif %}. This is a guest-account change, not an owner payout adjustment.</p><a href="/operations/accounts/{{ booking.id }}/statements/{{ s.id }}">Open original frozen guest statement</a>{% else %}<p>Snapshot figures withheld. Review original evidence before relying on it.</p>{% endif %}</details>{% else %}<p>No guest account statement snapshots recorded.</p>{% endfor %}
+{% if snapshots_truncated %}<p>Showing the latest 20; older snapshots remain accessible through the account.</p>{% endif %}
+</section>
+{% endblock %}
