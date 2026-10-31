@@ -9,6 +9,12 @@
   </form>
 </div>
 
+<section class="card"><h2>Open cleaning work</h2>
+<form method="get" class="form-row"><label>Property <select name="property_id"><option value="">All properties</option>{% for p in properties|default([]) %}<option value="{{ p.id }}"{% if selected_property_id==p.id %} selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label><input type="hidden" name="view" value="{{ queue_view|default('open') }}"><button class="btn">Filter property</button><a href="/cleaning">Reset filters</a></form>
+{% if queue_counts is defined %}<nav class="section-nav" aria-label="Open cleaning filters">{% for value,label in [('open','All open'),('unassigned','Unassigned'),('overdue','Overdue')] %}<a href="/cleaning?property_id={{ selected_property_id or '' }}&amp;view={{ value }}"{% if queue_view==value %} aria-current="page"{% endif %}>{{ label }} ({{ queue_counts[value] }})</a>{% endfor %}</nav>{% endif %}
+{% if timezone_unknown_count|default(0) %}<p class="tag tag-warn">{{ timezone_unknown_count }} open task(s) have an invalid property timezone; overdue status is unknown. <a href="/properties">Review property settings</a>.</p>{% endif %}
+</section>
+
 <section class="card">
   <h2>Cleaners</h2>
   <div class="table-wrap">
@@ -59,7 +65,7 @@
 
 {% if tasks|length == 0 %}
 <div class="empty-state">
-  <p>No cleaning tasks due. They're created automatically from checkout dates when bookings sync.</p>
+  <p>No open cleaning tasks match this selection. <a href="/cleaning">Reset filters</a> or <a href="/operations/setup">check calendar connections</a>.</p>
 </div>
 {% else %}
 <div class="table-wrap">
@@ -77,20 +83,25 @@
   </thead>
   <tbody>
     {% for t in tasks %}
-    <tr id="cleaning-task-{{ t.id }}" class="{{ 'conflict' if t.due_date.date() < now.date() else '' }}">
+    <tr id="cleaning-task-{{ t.id }}" class="{{ 'conflict' if t.id in overdue_task_ids|default([]) else '' }}">
       <td>{{ t.booking.property.name }}<br><a href="/operations/reservations/{{ t.booking_id }}">Reservation #{{ t.booking_id }}</a></td>
       <td>
         {{ t.due_date.strftime('%Y-%m-%d') }}
-        {% if t.due_date.date() < now.date() %}<span class="tag tag-warn">overdue</span>{% endif %}
+        {% if t.id in overdue_task_ids|default([]) %}<span class="tag tag-warn">overdue</span>{% endif %}
+        {% if t.schedule_review_required %}<p class="tag tag-warn">Schedule needs review · <a href="/operations">Review schedule change</a></p>{% endif %}
+        {% if t.schedule_locked %}<p class="muted">Schedule locked</p>{% endif %}
       </td>
       <td>{{ t.booking.guest.name if t.booking.guest and t.booking.guest.name else (t.booking.summary or '—') }}</td>
       <td>
+        <p>{{ (assignment_labels|default({})).get(t.id, (t.cleaner.name if t.cleaner else t.assignee) or 'Unassigned') }}</p>
         <form method="post" action="/cleaning/{{ t.id }}/assign" class="inline-form">
+          <input type="hidden" name="queue_property_id" value="{{ selected_property_id|default('') or '' }}"><input type="hidden" name="queue_view" value="{{ queue_view|default('open') }}">
           <select name="cleaner_id" style="width:120px">
             <option value="">— free text —</option>
             {% for c in cleaners %}
             <option value="{{ c.id }}" {% if t.cleaner_id == c.id %}selected{% endif %}>{{ c.name }}</option>
             {% endfor %}
+            {% if t.cleaner_id and t.cleaner_id not in (cleaners|map(attribute='id')|list) %}<option value="{{ t.cleaner_id }}" selected>{{ (assignment_labels|default({})).get(t.id, 'Existing cleaner') }}</option>{% endif %}
           </select>
           <input type="text" name="assignee" placeholder="or type a name" value="{{ t.assignee or '' }}" style="width:100px" />
           <button class="btn tiny" type="submit">save</button>
@@ -99,11 +110,13 @@
       <td><span class="tag {{ 'tag-ok' if t.status.value == 'assigned' else 'tag-warn' }}">{{ t.status.value }}</span></td>
       <td>
         <form method="post" action="/cleaning/{{ t.id }}/quality-check">
+          <input type="hidden" name="queue_property_id" value="{{ selected_property_id|default('') or '' }}"><input type="hidden" name="queue_view" value="{{ queue_view|default('open') }}">
           <button class="btn tiny {{ 'primary' if t.quality_checked }}" type="submit">{{ '✓ checked' if t.quality_checked else 'mark checked' }}</button>
         </form>
       </td>
       <td>
         <form method="post" action="/cleaning/{{ t.id }}/done">
+          <input type="hidden" name="queue_property_id" value="{{ selected_property_id|default('') or '' }}"><input type="hidden" name="queue_view" value="{{ queue_view|default('open') }}">
           <button class="btn tiny" type="submit">mark done</button>
         </form>
       </td>
@@ -115,7 +128,7 @@
 {% endif %}
 
 {% if done_tasks %}
-<h2 style="margin-top:24px">Recently completed</h2>
+<h2 style="margin-top:24px">Recently completed{% if selected_property_id|default(none) %} · selected property{% endif %}</h2>
 <div class="table-wrap">
 <table class="table small">
   <thead>
@@ -130,10 +143,11 @@
     {% for t in done_tasks %}
     <tr id="cleaning-task-{{ t.id }}">
       <td>{{ t.booking.property.name }}<br><a href="/operations/reservations/{{ t.booking_id }}">Reservation #{{ t.booking_id }}</a></td>
-      <td>{{ t.due_date.strftime('%Y-%m-%d') }}</td>
-      <td>{{ t.assignee or '—' }}</td>
+      <td>{{ t.due_date.strftime('%Y-%m-%d') }}{% if t.schedule_review_required %}<p class="tag tag-warn">Schedule needs review · <a href="/operations">Review schedule change</a></p>{% endif %}</td>
+      <td>{{ (assignment_labels|default({})).get(t.id, (t.cleaner.name if t.cleaner else t.assignee) or 'Unassigned') }}</td>
       <td>
         <form method="post" action="/cleaning/{{ t.id }}/reopen">
+          <input type="hidden" name="queue_property_id" value="{{ selected_property_id|default('') or '' }}"><input type="hidden" name="queue_view" value="{{ queue_view|default('open') }}">
           <button class="btn tiny" type="submit">reopen</button>
         </form>
       </td>
