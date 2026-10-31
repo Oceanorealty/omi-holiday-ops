@@ -16,6 +16,7 @@ from app.models import (Booking, BookingStatus, Cleaner, Guest, PlatformName, Ic
 from app.operations.calendar import calendar_data
 from app.operations.inventory import inventory_rows, inventory_token, save_inventory
 from app.operations.reservations import reservation_token, save_reservation, stay_dates
+from app.operations import stay_operations
 from app.operations.router import require_admin, templates
 from app.operations.tasks import TaskError
 from app.operations.pricing_limits import limits_token, save_limits
@@ -188,6 +189,7 @@ def reservation_detail(entity_id: int, request: Request, db=Depends(get_db), adm
         except TaskError:
             account_needs_review = True
     return templates.TemplateResponse(request=request, name='reservation_detail.html', context={
+        **stay_operations.context(db, row, admin),
         'booking': row, 'editable': editable, 'token': reservation_token(admin, row),
         'stay_nights': nights if nights > 0 else None,
         'stay_calendar_url': '/operations/calendar?' + urlencode(dict(property_id=row.property_id,
@@ -332,3 +334,18 @@ def report_csv(start: date, end: date, property_id: int = None, db=Depends(get_d
             row['missing_amounts'], row['source_reviews'], row['conflict_days'], row['stop_sell_nights'], row['complete']])
     return Response('\ufeff' + output.getvalue(), media_type='text/csv',
                     headers={'Content-Disposition': 'attachment; filename="ops-property-report.csv"'})
+
+
+@router.post('/operations/reservations/{entity_id}/attendance')
+def stay_record(entity_id: int, request: Request, token: str = Form(...), action: str = Form(...),
+                note: str = Form(...), arrived_at: str = Form(''), departed_at: str = Form(''),
+                expected_departure: str = Form(''), target_status: str = Form(''),
+                db=Depends(get_db), admin=Depends(require_admin)):
+    same_origin(request)
+    try:
+        stay_operations.record(db, actor=admin, booking_id=entity_id, submitted_token=token,
+            action=action, note=note, arrived_at=arrived_at, departed_at=departed_at,
+            expected_departure=expected_departure, target_status=target_status)
+    except TaskError as exc:
+        raise HTTPException(409, str(exc)) from None
+    return RedirectResponse('/operations/reservations/' + str(entity_id) + '#attendance', status_code=303)
