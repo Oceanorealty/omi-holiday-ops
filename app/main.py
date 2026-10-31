@@ -808,22 +808,18 @@ def property_ical_export(property_id: int, token: str):
 
 
 @app.get("/cleaning")
-def cleaning_page(request: Request):
+def cleaning_page(request: Request, property_id: str = '', view: str = 'open'):
     db = SessionLocal()
     try:
-        tasks = (
-            db.query(CleaningTask)
-            .filter(CleaningTask.status != CleaningStatus.done, CleaningTask.cancelled_at.is_(None))
-            .order_by(CleaningTask.due_date)
-            .all()
-        )
-        done_tasks = (
-            db.query(CleaningTask)
-            .filter(CleaningTask.status == CleaningStatus.done)
-            .order_by(CleaningTask.due_date.desc())
-            .limit(20)
-            .all()
-        )
+        from app.operations.cleaning_queue import queue_data
+        from app.operations.tasks import TaskError
+        try:
+            queue = queue_data(db, property_id=property_id, view=view)
+        except TaskError as exc:
+            raise HTTPException(422, str(exc)) from None
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from None
+        tasks = queue['tasks']
         cleaners = db.query(Cleaner).filter(Cleaner.active.is_(True)).order_by(Cleaner.name).all()
 
         # Linen needs: bed count per property, summed by due date, for the
@@ -840,8 +836,7 @@ def cleaning_page(request: Request):
             "cleaning.html",
             {
                 "request": request,
-                "tasks": tasks,
-                "done_tasks": done_tasks,
+                **queue,
                 "now": datetime.utcnow(),
                 "cleaners": cleaners,
                 "linen_rows": linen_rows,
@@ -852,7 +847,8 @@ def cleaning_page(request: Request):
 
 
 @app.post("/cleaning/{task_id}/assign")
-def assign_cleaning_task(task_id: int, assignee: str = Form(""), cleaner_id: str = Form("")):
+def assign_cleaning_task(task_id: int, assignee: str = Form(""), cleaner_id: str = Form(""),
+                         queue_property_id: str = Form(''), queue_view: str = Form('open')):
     db = SessionLocal()
     try:
         task = db.get(CleaningTask, task_id)
@@ -864,11 +860,13 @@ def assign_cleaning_task(task_id: int, assignee: str = Form(""), cleaner_id: str
             db.commit()
     finally:
         db.close()
-    return RedirectResponse(url="/cleaning", status_code=303)
+    from app.operations.cleaning_queue import queue_return_url
+    return RedirectResponse(url=queue_return_url(queue_property_id, queue_view), status_code=303)
 
 
 @app.post("/cleaning/{task_id}/quality-check")
-def toggle_quality_check(task_id: int, quality_notes: str = Form("")):
+def toggle_quality_check(task_id: int, quality_notes: str = Form(""),
+                         queue_property_id: str = Form(''), queue_view: str = Form('open')):
     db = SessionLocal()
     try:
         task = db.get(CleaningTask, task_id)
@@ -878,7 +876,8 @@ def toggle_quality_check(task_id: int, quality_notes: str = Form("")):
             db.commit()
     finally:
         db.close()
-    return RedirectResponse(url="/cleaning", status_code=303)
+    from app.operations.cleaning_queue import queue_return_url
+    return RedirectResponse(url=queue_return_url(queue_property_id, queue_view), status_code=303)
 
 
 @app.post("/cleaners")
@@ -947,7 +946,7 @@ def cleaner_portal_complete(token: str, task_id: int):
 
 
 @app.post("/cleaning/{task_id}/done")
-def complete_cleaning_task(task_id: int):
+def complete_cleaning_task(task_id: int, queue_property_id: str = Form(''), queue_view: str = Form('open')):
     db = SessionLocal()
     try:
         task = db.get(CleaningTask, task_id)
@@ -956,20 +955,22 @@ def complete_cleaning_task(task_id: int):
             db.commit()
     finally:
         db.close()
-    return RedirectResponse(url="/cleaning", status_code=303)
+    from app.operations.cleaning_queue import queue_return_url
+    return RedirectResponse(url=queue_return_url(queue_property_id, queue_view), status_code=303)
 
 
 @app.post("/cleaning/{task_id}/reopen")
-def reopen_cleaning_task(task_id: int):
+def reopen_cleaning_task(task_id: int, queue_property_id: str = Form(''), queue_view: str = Form('open')):
     db = SessionLocal()
     try:
         task = db.get(CleaningTask, task_id)
         if task and task.cancelled_at is None:
-            task.status = CleaningStatus.assigned if task.assignee else CleaningStatus.pending
+            task.status = CleaningStatus.assigned if (task.cleaner_id or task.assignee) else CleaningStatus.pending
             db.commit()
     finally:
         db.close()
-    return RedirectResponse(url="/cleaning", status_code=303)
+    from app.operations.cleaning_queue import queue_return_url
+    return RedirectResponse(url=queue_return_url(queue_property_id, queue_view), status_code=303)
 
 
 @app.get("/transactions")
